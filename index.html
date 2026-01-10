@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banana Plugs 3.0</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map para cargar React y Lucide directamente desde CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.294.0"
+        }
+    }
+    </script>
+    <style>
+        @keyframes spin-custom {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        @keyframes pulse-star {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        /* Scrollbar styling for modal content if needed */
+        .modal-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .modal-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen w-full overflow-hidden">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="module">
+        import React, { useState, useRef, useEffect, useCallback } from 'react';
+        import { createRoot } from 'react-dom/client';
+        // Importamos los nuevos iconos necesarios: Upload (flecha arriba), Image (imagen)
+        // Mantenemos Download para exportar JSON
+        import { Trash2, RotateCw, Settings, ZoomIn, ZoomOut, Banana, Eraser, Info, Undo2, Redo2, Maximize, Download, X, Github, Linkedin, Upload, Image as ImageIcon } from 'lucide-react';
+
+        // --- NOMBRES GRACIOSOS ---
+        const FUNNY_NAMES = [
+            "Chispas_Locas", "Voltio_Inquieto", "Amperio_Furioso", 
+            "Ohmio_Sabio", "Resistencia_Tope", "Electron_Perdido", 
+            "Circuito_Magico", "Rayo_Veloz", "Pila_Infinita", 
+            "Cable_Pelado", "Tension_Alta", "Corriente_Alterna",
+            "Fuga_Electrica", "Watt_Poderoso", "Julio_Energico",
+            "Banana_Power", "Cortocircuito_Feliz", "Led_Zeppelin"
+        ];
+
+        // --- CONFIGURACIÓN ---
+        const GRID_SIZE = 20;
+        const SNAP = 20;
+        const ITERATIONS = 100;
+
+        // --- TIPOS DE COMPONENTES ---
+        const COMP_TYPES = {
+            BATTERY: 'battery',
+            BULB: 'bulb',
+            RESISTOR: 'resistor', 
+            POTENTIOMETER: 'potentiometer',
+            SWITCH: 'switch',
+            TOGGLE_SWITCH: 'toggle_switch', 
+            DOUBLE_TOGGLE_SWITCH: 'double_toggle_switch',
+            PUSH_NO: 'push_no',
+            PUSH_NC: 'push_nc',
+            VOLTMETER: 'voltmeter',
+            AMMETER: 'ammeter', 
+            BUZZER: 'buzzer', 
+            MOTOR_DC: 'motor_dc',
+            LED: 'led',
+            CROSSOVER: 'crossover',
+        };
+
+        // --- PREFIJOS PARA ETIQUETAS ---
+        const TYPE_PREFIXES = {
+            [COMP_TYPES.BATTERY]: 'Vcc', 
+            [COMP_TYPES.BULB]: 'B',
+            [COMP_TYPES.RESISTOR]: 'R',
+            [COMP_TYPES.POTENTIOMETER]: 'P',
+            [COMP_TYPES.SWITCH]: 'I', 
+            [COMP_TYPES.TOGGLE_SWITCH]: 'C', 
+            [COMP_TYPES.DOUBLE_TOGGLE_SWITCH]: '2C',
+            [COMP_TYPES.PUSH_NO]: 'PNA',
+            [COMP_TYPES.PUSH_NC]: 'PNC',
+            [COMP_TYPES.VOLTMETER]: 'V',
+            [COMP_TYPES.AMMETER]: 'A',
+            [COMP_TYPES.BUZZER]: 'Z',
+            [COMP_TYPES.MOTOR_DC]: 'M',
+            [COMP_TYPES.LED]: 'L',
+            [COMP_TYPES.CROSSOVER]: 'CR',
+        };
+
+        // --- CATÁLOGO ---
+        const CATALOG = [
+            { 
+                type: COMP_TYPES.BATTERY, 
+                label: 'Fuente CC', 
+                w: 3, h: 2, 
+                properties: { voltage: 9, alias: 'Vcc1' }, 
+                terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+            { 
+                type: COMP_TYPES.BULB, 
+                label: 'Bombilla', 
+                w: 3, h: 2, 
+                properties: { resistance: 50 }, 
+                terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] 
+            },
+            { 
+                type: COMP_TYPES.RESISTOR, 
+                label: 'Resistencia', 
+                w: 3, h: 2, 
+                properties: { resistance: 100, unit: 1, alias: 'R1' }, 
+                terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] 
+            },
+            { 
+                type: COMP_TYPES.POTENTIOMETER, 
+                label: 'Potenciómetro', 
+                w: 3, h: 3, 
+                properties: { resistance: 100, unit: 1, position: 0.5 }, 
+                terminals: [
+                    { x: 0, y: 2, id: 't1' },    
+                    { x: 3, y: 2, id: 't2' },    
+                    { x: 1.5, y: 0, id: 'wiper' } 
+                ] 
+            },
+            { 
+                type: COMP_TYPES.LED, 
+                label: 'LED', 
+                w: 3, h: 2, 
+                properties: { forwardVoltage: 2, maxCurrent: 0.03, resistance: 1, color: 'red', alias: 'LED' }, 
+                terminals: [{ x: 0, y: 1, id: 'anode', pol: '+' }, { x: 3, y: 1, id: 'cathode', pol: '-' }] 
+            },
+            { 
+                type: COMP_TYPES.MOTOR_DC, 
+                label: 'Motor DC', 
+                w: 3, h: 2, 
+                properties: { resistance: 20 }, 
+                terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+            { 
+                type: COMP_TYPES.BUZZER, 
+                label: 'Zumbador', 
+                w: 3, h: 2, 
+                properties: { resistance: 100 }, 
+                terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+            { type: COMP_TYPES.SWITCH, label: 'Interruptor', w: 3, h: 2, terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] },
+            { 
+                type: COMP_TYPES.TOGGLE_SWITCH, 
+                label: 'Conmutador', 
+                w: 3, h: 2, 
+                terminals: [
+                    { x: 0, y: 1, id: 'common' }, 
+                    { x: 3, y: 0, id: 't1' }, 
+                    { x: 3, y: 2, id: 't2' }
+                ] 
+            },
+            { 
+                type: COMP_TYPES.DOUBLE_TOGGLE_SWITCH, 
+                label: 'Doble Conmutador', 
+                w: 3, h: 5, // Altura 5 para acomodar dos conmutadores con espacio
+                terminals: [
+                    // Switch 1 (Arriba)
+                    { x: 0, y: 1, id: 'common1' }, 
+                    { x: 3, y: 0, id: 't1_1' }, 
+                    { x: 3, y: 2, id: 't2_1' },
+                    // Switch 2 (Abajo)
+                    { x: 0, y: 4, id: 'common2' }, 
+                    { x: 3, y: 3, id: 't1_2' }, 
+                    { x: 3, y: 5, id: 't2_2' }
+                ] 
+            },
+            {
+                type: COMP_TYPES.CROSSOVER,
+                label: 'Llave de Cruce',
+                w: 3, h: 2, 
+                terminals: [
+                    { x: 0, y: 0, id: 't1' }, 
+                    { x: 0, y: 2, id: 't2' }, 
+                    { x: 3, y: 0, id: 't3' }, 
+                    { x: 3, y: 2, id: 't4' }  
+                ]
+            },
+            { type: COMP_TYPES.PUSH_NO, label: 'Pulsador NA', w: 3, h: 2, terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] },
+            { type: COMP_TYPES.PUSH_NC, label: 'Pulsador NC', w: 3, h: 2, terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] },
+            { 
+                type: COMP_TYPES.VOLTMETER, 
+                label: 'Voltímetro', 
+                w: 3, h: 2, 
+                properties: { resistance: 10000000 },
+                terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+            { 
+                type: COMP_TYPES.AMMETER, 
+                label: 'Amperímetro', 
+                w: 3, h: 2, 
+                properties: { resistance: 0.001 }, 
+                terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+        ];
+
+        const snapToGrid = (val) => Math.round(val / SNAP) * SNAP;
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        
+        const getResistorLabel = (props) => {
+            const unit = props.unit || 1;
+            const val = props.resistance / unit;
+            let symbol = "Ω";
+            if (unit === 1000) symbol = "kΩ";
+            if (unit === 1000000) symbol = "MΩ";
+            return `${val} ${symbol}`;
+        };
+
+        const LED_COLORS = {
+            red: { on: '#FF0000', label: 'Rojo' },
+            green: { on: '#00FF00', label: 'Verde' },
+            blue: { on: '#0088FF', label: 'Azul' },
+            yellow: { on: '#FFFF00', label: 'Amarillo' },
+            orange: { on: '#FFA500', label: 'Naranja' },
+            white: { on: '#DDDDDD', label: 'Blanco' }
+        };
+
+        const hexToRgb = (hex) => {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 255, g: 255, b: 255 };
+        }
+
+        const interpolateColor = (c1, c2, factor) => {
+            const rgb1 = hexToRgb(c1);
+            const rgb2 = hexToRgb(c2);
+            const r = Math.round(rgb1.r + factor * (rgb2.r - rgb1.r));
+            const g = Math.round(rgb1.g + factor * (rgb2.g - rgb1.g));
+            const b = Math.round(rgb1.b + factor * (rgb2.b - rgb1.b));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        const SymbolRenderer = ({ type, state, voltageDrop = 0, properties, color = '#000', onUpdateProp, isIcon = false }) => {
+            const strokeWidth = 2;
+            const absVoltage = Math.abs(voltageDrop);
+            const voltage = voltageDrop;
+            
+            const brightness = Math.min(Math.max(absVoltage / 9, 0), 2); 
+            const isLit = brightness > 0.1;
+            const bulbColor = brightness > 1.5 ? '#FFFFE0' : '#FFEB3B'; 
+            const glowOpacity = Math.min(brightness, 1);
+            const isBuzzing = absVoltage >= 6; 
+
+            const handlePotSliderChange = (e) => {
+                e.stopPropagation(); 
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const width = rect.width;
+                const newPos = Math.max(0, Math.min(1, x / width));
+                if (onUpdateProp) onUpdateProp('position', newPos);
+            };
+
+            switch(type) {
+                case COMP_TYPES.BATTERY:
+                    return React.createElement("g", null,
+                        React.createElement("text", { x: "5", y: "10", fontSize: "10", fill: "#666", className: "pointer-events-none select-none" }, "+"),
+                        React.createElement("line", { x1: "0", y1: "20", x2: "25", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "25", y1: "5", x2: "25", y2: "35", stroke: color, strokeWidth: "3" }),
+                        React.createElement("line", { x1: "35", y1: "12", x2: "35", y2: "28", stroke: color, strokeWidth: "4" }),
+                        React.createElement("line", { x1: "35", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth })
+                    );
+                case COMP_TYPES.BULB:
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "30", cy: "20", r: "10", stroke: color, strokeWidth: strokeWidth, fill: isLit ? bulbColor : "white", fillOpacity: isLit ? glowOpacity : 1, className: "sim-fill" }), 
+                        React.createElement("line", { x1: "24", y1: "14", x2: "36", y2: "26", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "36", y1: "14", x2: "24", y2: "26", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        isLit && React.createElement("g", { stroke: "#FFD700", strokeWidth: "2", opacity: glowOpacity, className: "sim-visible" }, 
+                            React.createElement("line", { x1: "20", y1: "8", x2: "15", y2: "3" }),
+                            React.createElement("line", { x1: "40", y1: "8", x2: "45", y2: "3" }),
+                            React.createElement("line", { x1: "30", y1: "6", x2: "30", y2: "1" })
+                        )
+                    );
+                case COMP_TYPES.RESISTOR:
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "15", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "45", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("rect", { x: "15", y: "12", width: "30", height: "16", fill: "white", stroke: color, strokeWidth: strokeWidth })
+                    );
+                case COMP_TYPES.POTENTIOMETER:
+                    const pos = properties.position !== undefined ? properties.position : 0.5;
+                    const sliderX = 15 + (pos * 30);
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "40", x2: "15", y2: "40", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "45", y1: "40", x2: "60", y2: "40", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("rect", { x: "15", y: "32", width: "30", height: "16", fill: "white", stroke: color, strokeWidth: strokeWidth }),
+                        
+                        React.createElement("polyline", { 
+                            points: `30,0 30,20 ${sliderX},25 ${sliderX},32`, 
+                            fill: "none", stroke: color, strokeWidth: strokeWidth 
+                        }),
+                        React.createElement("polygon", { points: `${sliderX},32 ${sliderX-3},27 ${sliderX+3},27`, fill: color })
+                    );
+                case COMP_TYPES.LED:
+                    const rLed = properties.resistance || 1;
+                    const vFwd = properties.forwardVoltage || 2;
+                    const vEff = Math.max(0, voltage - vFwd);
+                    const currentLed = vEff / rLed;
+                    const isBroken = currentLed > (properties.maxCurrent || 0.03);
+                    
+                    const ledColorKey = properties.color || 'red';
+                    const targetColor = LED_COLORS[ledColorKey] ? LED_COLORS[ledColorKey].on : '#FF0000';
+                    const startColor = "#FFFFFF"; 
+                    
+                    let ledFill = startColor;
+                    const minCurrent = 0.005; 
+                    const saturationCurrent = 0.020; 
+
+                    if (!isBroken) {
+                        if (currentLed <= minCurrent) {
+                            ledFill = startColor;
+                        } else if (currentLed >= saturationCurrent) {
+                            ledFill = targetColor;
+                        } else {
+                            let factor = (currentLed - minCurrent) / (saturationCurrent - minCurrent);
+                            if (factor > 1) factor = 1;
+                            if (factor < 0) factor = 0;
+                            ledFill = interpolateColor(startColor, targetColor, factor);
+                        }
+                    } else {
+                        ledFill = "#333";
+                    }
+
+                    return React.createElement("g", null,
+                        
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }), 
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }), 
+                        
+                        React.createElement("polygon", { 
+                            points: "20,10 20,30 40,20", 
+                            fill: ledFill, 
+                            className: "sim-fill", 
+                            stroke: color,  
+                            strokeWidth: strokeWidth 
+                        }),
+                        React.createElement("line", { x1: "40", y1: "10", x2: "40", y2: "30", stroke: color, strokeWidth: strokeWidth }), 
+                        
+                        React.createElement("g", { stroke: color, strokeWidth: "1.5" },
+                            React.createElement("line", { x1: "30", y1: "5", x2: "36", y2: "-1" }),
+                            React.createElement("line", { x1: "36", y1: "8", x2: "42", y2: "2" }),
+                            React.createElement("polygon", { points: "36,-1 33,0 36,2", fill: color, stroke: "none" }),
+                            React.createElement("polygon", { points: "42,2 39,3 42,5", fill: color, stroke: "none" })
+                        ),
+
+                        isBroken && React.createElement("g", { transform: "translate(30, 20)", className: "sim-visible" }, 
+                             React.createElement("polygon", {
+                                 points: "0,-8 2,-2 8,-2 3,2 5,8 0,4 -5,8 -3,2 -8,-2 -2,-2",
+                                 fill: "#EF4444", 
+                                 stroke: "#FCD34D", 
+                                 strokeWidth: "1.5",
+                                 style: { animation: "pulse-star 0.5s infinite" }
+                             })
+                        ),
+
+                        !isIcon && React.createElement(React.Fragment, null,
+                            React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "#666" }, "A"),
+                            React.createElement("text", { x: "55", y: "15", fontSize: "8", fill: "#666" }, "K")
+                        )
+                    );
+
+                case COMP_TYPES.MOTOR_DC:
+                    const speed = absVoltage > 0.5;
+                    const cw = voltage > 0;
+                    const animDuration = speed ? Math.max(0.2, 5 / absVoltage) + 's' : '0s';
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "15", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "45", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "30", cy: "20", r: "15", stroke: color, strokeWidth: strokeWidth, fill: "white" }),
+                        React.createElement("text", { x: "30", y: "25", textAnchor: "middle", fontSize: "12", fontWeight: "bold", fill: "#333" }, "M"),
+                        speed && React.createElement("g", { 
+                            className: "sim-visible", 
+                            style: { 
+                                transformBox: 'fill-box', 
+                                transformOrigin: 'center', 
+                                animation: `spin-custom ${animDuration} linear infinite`,
+                                animationDirection: cw ? 'normal' : 'reverse'
+                            }
+                        },
+                            React.createElement("path", { d: "M 30 5 L 30 35 M 15 20 L 45 20", stroke: "#CBD5E1", strokeWidth: "2", opacity: "0.5" })
+                        ),
+                        speed && (cw ? 
+                            React.createElement("path", { d: "M 35 2 A 18 18 0 0 1 50 15", stroke: "#22c55e", strokeWidth: "2", fill: "none", markerEnd: "url(#arrowhead-green)", className: "sim-visible" }) : 
+                            React.createElement("path", { d: "M 25 2 A 18 18 0 0 0 10 15", stroke: "#ef4444", strokeWidth: "2", fill: "none", markerEnd: "url(#arrowhead-red)", className: "sim-visible" }) 
+                        )
+                    );
+                case COMP_TYPES.BUZZER:
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "20", y1: "20", x2: "20", y2: "15", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "40", y2: "15", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("path", { 
+                            d: "M 15 5 L 45 5 L 45 9 Q 45 18 30 18 Q 15 18 15 9 Z", 
+                            fill: isBuzzing ? "#fee2e2" : "white", 
+                            className: "sim-fill", 
+                            stroke: color, 
+                            strokeWidth: strokeWidth 
+                        }),
+                        React.createElement("line", { x1: "15", y1: "5", x2: "45", y2: "5", stroke: color, strokeWidth: strokeWidth }),
+                        isBuzzing && React.createElement("g", { stroke: "orange", strokeWidth: "2", fill: "none", className: "sim-visible" }, 
+                            React.createElement("path", { d: "M 25 0 Q 30 -5 35 0" }),
+                            React.createElement("path", { d: "M 20 -3 Q 30 -10 40 -3", opacity: "0.6" }),
+                            React.createElement("path", { d: "M 15 -6 Q 30 -15 45 -6", opacity: "0.3" })
+                        )
+                    );
+                case COMP_TYPES.SWITCH:
+                    const angle = state ? 0 : -30;
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "20", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("line", { x1: "20", y1: "20", x2: "40", y2: "20", stroke: color, strokeWidth: strokeWidth, transform: `rotate(${angle} 20 20)` }),
+                        React.createElement("circle", { cx: "40", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth })
+                    );
+                case COMP_TYPES.TOGGLE_SWITCH:
+                    const toggleTargetY = state ? 40 : 0; 
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "40", cy: "0", r: "2", fill: "black" }), 
+                        React.createElement("circle", { cx: "40", cy: "40", r: "2", fill: "black" }),
+                        React.createElement("line", { x1: "20", y1: "20", x2: "40", y2: toggleTargetY, stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "0", x2: "60", y2: "0", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "40", x2: "60", y2: "40", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "#666" }, "C"),
+                        React.createElement("text", { x: "50", y: "8", fontSize: "8", fill: "#666" }, "1"),
+                        React.createElement("text", { x: "50", y: "35", fontSize: "8", fill: "#666" }, "2")
+                    );
+                case COMP_TYPES.DOUBLE_TOGGLE_SWITCH:
+                    // Definimos offset Y para el segundo interruptor (3 unidades de grid * 20px = 60px)
+                    const offsetY = 60; 
+                    // Si state es true, conecta abajo (pos relativa 40), si es false arriba (pos relativa 0)
+                    // Switch 1 (Base Y=0)
+                    const sw1TargetY = state ? 40 : 0;
+                    // Switch 2 (Base Y=60) -> Salidas en 60 (arriba) y 100 (abajo)
+                    // Entrada común en 80.
+                    const sw2TargetY = state ? 100 : 60;
+                    
+                    return React.createElement("g", null,
+                        // --- SWITCH 1 (Arriba) ---
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }), // Common In
+                        React.createElement("circle", { cx: "40", cy: "0", r: "2", fill: "black" }), // T1 dot
+                        React.createElement("circle", { cx: "40", cy: "40", r: "2", fill: "black" }), // T2 dot
+                        React.createElement("line", { x1: "20", y1: "20", x2: "40", y2: sw1TargetY, stroke: color, strokeWidth: strokeWidth }), // Palanca
+                        React.createElement("line", { x1: "40", y1: "0", x2: "60", y2: "0", stroke: color, strokeWidth: strokeWidth }), // T1 Out
+                        React.createElement("line", { x1: "40", y1: "40", x2: "60", y2: "40", stroke: color, strokeWidth: strokeWidth }), // T2 Out
+
+                        // --- SWITCH 2 (Abajo) ---
+                        React.createElement("line", { x1: "0", y1: "80", x2: "20", y2: "80", stroke: color, strokeWidth: strokeWidth }), // Common In
+                        React.createElement("circle", { cx: "40", cy: "60", r: "2", fill: "black" }), // T1 dot
+                        React.createElement("circle", { cx: "40", cy: "100", r: "2", fill: "black" }), // T2 dot
+                        React.createElement("line", { x1: "20", y1: "80", x2: "40", y2: sw2TargetY, stroke: color, strokeWidth: strokeWidth }), // Palanca
+                        React.createElement("line", { x1: "40", y1: "60", x2: "60", y2: "60", stroke: color, strokeWidth: strokeWidth }), // T1 Out
+                        React.createElement("line", { x1: "40", y1: "100", x2: "60", y2: "100", stroke: color, strokeWidth: strokeWidth }), // T2 Out
+
+                        // --- UNIÓN MECÁNICA (Línea discontinua RECTA) ---
+                        React.createElement("line", { 
+                            x1: "30", y1: sw1TargetY === 0 ? 10 : 30,
+                            x2: "30", y2: sw2TargetY === 60 ? 70 : 90,
+                            stroke: "#94a3b8", strokeWidth: "1", strokeDasharray: "3,3"
+                        }),
+                        
+                        // Etiquetas
+                        React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "#666" }, "A"),
+                        React.createElement("text", { x: "5", y: "75", fontSize: "8", fill: "#666" }, "B")
+                    );
+                case COMP_TYPES.CROSSOVER:
+                    // Sin rectángulo.
+                    // Terminales
+                    return React.createElement("g", null,
+                        React.createElement("circle", { cx: "0", cy: "0", r: "2", fill: "black" }),
+                        React.createElement("circle", { cx: "0", cy: "40", r: "2", fill: "black" }),
+                        React.createElement("circle", { cx: "60", cy: "0", r: "2", fill: "black" }),
+                        React.createElement("circle", { cx: "60", cy: "40", r: "2", fill: "black" }),
+                        !state ? (
+                            // Directo (=)
+                            // Solid: (0,0)-(60,0), (0,40)-(60,40)
+                            // Dashed: (0,0)-(60,40), (0,40)-(60,0)
+                            React.createElement("g", null,
+                                React.createElement("line", { x1: "0", y1: "0", x2: "60", y2: "0", stroke: color, strokeWidth: strokeWidth }),
+                                React.createElement("line", { x1: "0", y1: "40", x2: "60", y2: "40", stroke: color, strokeWidth: strokeWidth }),
+                                // Dashed lines
+                                React.createElement("line", { x1: "0", y1: "0", x2: "60", y2: "40", stroke: color, strokeWidth: "1", strokeDasharray: "4,4" }),
+                                React.createElement("line", { x1: "0", y1: "40", x2: "60", y2: "0", stroke: color, strokeWidth: "1", strokeDasharray: "4,4" })
+                            )
+                        ) : (
+                            // Cruzado (X)
+                            // Solid: (0,0)-(60,40), (0,40)-(60,0)
+                            // Dashed: (0,0)-(60,0), (0,40)-(60,40)
+                            React.createElement("g", null,
+                                React.createElement("line", { x1: "0", y1: "0", x2: "60", y2: "40", stroke: color, strokeWidth: strokeWidth }),
+                                React.createElement("line", { x1: "0", y1: "40", x2: "60", y2: "0", stroke: color, strokeWidth: strokeWidth }),
+                                // Dashed lines
+                                React.createElement("line", { x1: "0", y1: "0", x2: "60", y2: "0", stroke: color, strokeWidth: "1", strokeDasharray: "4,4" }),
+                                React.createElement("line", { x1: "0", y1: "40", x2: "60", y2: "40", stroke: color, strokeWidth: "1", strokeDasharray: "4,4" })
+                            )
+                        )
+                    );
+                case COMP_TYPES.PUSH_NO:
+                    const offsetNO = state ? 4 : 0;
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "20", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("circle", { cx: "40", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("g", { transform: `translate(0, ${offsetNO})` },
+                            React.createElement("line", { x1: "20", y1: "15", x2: "40", y2: "15", stroke: color, strokeWidth: strokeWidth }),
+                            React.createElement("line", { x1: "30", y1: "15", x2: "30", y2: "5", stroke: color, strokeWidth: strokeWidth })
+                        )
+                    );
+                case COMP_TYPES.PUSH_NC:
+                    const offsetNC = state ? -4 : 0;
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "20", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("circle", { cx: "40", cy: "20", r: "2", fill: "black" }),
+                        React.createElement("g", { transform: `translate(0, ${offsetNC})` },
+                            React.createElement("line", { x1: "20", y1: "20", x2: "40", y2: "20", stroke: color, strokeWidth: strokeWidth }),
+                            React.createElement("line", { x1: "30", y1: "20", x2: "30", y2: "10", stroke: color, strokeWidth: strokeWidth })
+                        )
+                    );
+                case COMP_TYPES.VOLTMETER:
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "10", y2: "20", stroke: "#EF4444", strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "50", y1: "20", x2: "60", y2: "20", stroke: "black", strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "30", cy: "20", r: "14", fill: "white", stroke: "#333", strokeWidth: "2" }),
+                        React.createElement("text", { x: "30", y: "24", textAnchor: "middle", fontSize: "14", fontWeight: "bold", fill: "#333" }, "V"),
+                        React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "red", fontWeight: "bold" }, "+"),
+                        React.createElement("text", { x: "52", y: "15", fontSize: "8", fill: "black", fontWeight: "bold" }, "-")
+                    );
+                case COMP_TYPES.AMMETER:
+                    return React.createElement("g", null,
+                        React.createElement("line", { x1: "0", y1: "20", x2: "10", y2: "20", stroke: "#EF4444", strokeWidth: strokeWidth }),
+                        React.createElement("line", { x1: "50", y1: "20", x2: "60", y2: "20", stroke: "black", strokeWidth: strokeWidth }),
+                        React.createElement("circle", { cx: "30", cy: "20", r: "14", fill: "white", stroke: "#333", strokeWidth: "2" }),
+                        
+                        // Símbolo fijo "A"
+                        React.createElement("text", { x: "30", y: "24", textAnchor: "middle", fontSize: "14", fontWeight: "bold", fill: "#333" }, "A"),
+                        
+                        React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "red", fontWeight: "bold" }, "+"),
+                        React.createElement("text", { x: "52", y: "15", fontSize: "8", fill: "black", fontWeight: "bold" }, "-")
+                    );
+                default: return null;
+            }
+        };
+
+        function App() {
+            // --- STATE PARA EL NOMBRE DEL PROYECTO ---
+            const [projectName, setProjectName] = useState(() => FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)]);
+            const fileInputRef = useRef(null);
+
+            // ... (useState hooks and logic unchanged)
+            const [components, setComponents] = useState([]);
+            const [wires, setWires] = useState([]);
+            const [draggingComp, setDraggingComp] = useState(null);
+            const [selectedCompId, setSelectedCompId] = useState(null);
+            const [drawingWire, setDrawingWire] = useState(null); 
+            const [compVoltages, setCompVoltages] = useState({}); 
+            const [showInfoModal, setShowInfoModal] = useState(false); 
+            
+            // Undo/Redo states
+            const [history, setHistory] = useState([{ components: [], wires: [] }]);
+            const [currentStep, setCurrentStep] = useState(0);
+
+            const [zoom, setZoom] = useState(1); 
+            const [pan, setPan] = useState({ x: 0, y: 0 });
+            const [isPanning, setIsPanning] = useState(false);
+            const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+            const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+            const svgRef = useRef(null);
+
+            const audioCtxRef = useRef(null);
+            const oscillatorRef = useRef(null);
+            const gainNodeRef = useRef(null);
+
+            const selectedComponent = components.find(c => c.id === selectedCompId);
+
+            // --- EXPORTAR A JSON ---
+            const handleExportJSON = () => {
+                const data = {
+                    version: "3.0",
+                    timestamp: new Date().toISOString(),
+                    projectName,
+                    components,
+                    wires
+                };
+                const jsonString = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonString], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${projectName || 'sin_titulo'}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+
+            // --- IMPORTAR DESDE JSON ---
+            const handleImportJSON = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.components && data.wires) {
+                            // Cargar datos
+                            setComponents(data.components);
+                            setWires(data.wires);
+                            if (data.projectName) setProjectName(data.projectName);
+                            
+                            // Resetear historial al estado cargado
+                            setHistory([{ components: data.components, wires: data.wires }]);
+                            setCurrentStep(0);
+                            setSelectedCompId(null);
+                        } else {
+                            alert("El archivo no tiene el formato correcto de Banana Plugs.");
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert("Error al leer el archivo. Asegúrate de que es un archivo .json válido.");
+                    }
+                };
+                reader.readAsText(file);
+                // Limpiar input para permitir recargar el mismo archivo si es necesario
+                e.target.value = '';
+            };
+
+            const handleTriggerImport = () => {
+                fileInputRef.current.click();
+            };
+
+            // ... (helper functions getTerminalPos, generateWirePathData unchanged) ...
+            const getTerminalPos = (compId, termId) => {
+                const comp = components.find(c => c.id === compId);
+                if (!comp) return { x: 0, y: 0 };
+                const template = CATALOG.find(c => c.type === comp.type);
+                const term = template.terminals.find(t => t.id === termId);
+                let lx = term.x, ly = term.y;
+                if (comp.rotation === 90) { lx = template.h - term.y; ly = term.x; } 
+                else if (comp.rotation === 180) { lx = template.w - term.x; ly = template.h - term.y; } 
+                else if (comp.rotation === 270) { lx = term.y; ly = template.w - term.x; }
+                return { x: comp.x + lx * SNAP, y: comp.y + ly * SNAP };
+            };
+            const generateWirePathData = (start, end, waypoints = []) => {
+                let d = `M ${start.x} ${start.y}`;
+                let prev = start;
+                waypoints.forEach(pt => { d += ` L ${pt.x} ${pt.y}`; prev = pt; });
+                if (prev.x === end.x || prev.y === end.y) d += ` L ${end.x} ${end.y}`;
+                else { const midX = snapToGrid((prev.x + end.x) / 2); d += ` L ${midX} ${prev.y} L ${midX} ${end.y} L ${end.x} ${end.y}`; }
+                return d;
+            };
+            
+            // --- Fit to View Function ---
+            const handleFitView = () => {
+                if (components.length === 0) {
+                    setPan({ x: 0, y: 0 });
+                    setZoom(1);
+                    return;
+                }
+
+                const rect = svgRef.current.getBoundingClientRect();
+                const vw = rect.width;
+                const vh = rect.height;
+                const padding = 50;
+
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+                components.forEach(c => {
+                    const w = c.width * SNAP;
+                    const h = c.height * SNAP;
+                    if (c.x < minX) minX = c.x;
+                    if (c.y < minY) minY = c.y;
+                    if (c.x + w > maxX) maxX = c.x + w;
+                    if (c.y + h > maxY) maxY = c.y + h;
+                });
+
+                wires.forEach(w => {
+                    const p1 = getTerminalPos(w.startCompId, w.startTerm);
+                    const p2 = getTerminalPos(w.endCompId, w.endTerm);
+                    [p1, p2, ...w.waypoints].forEach(pt => {
+                        if (pt.x < minX) minX = pt.x;
+                        if (pt.y < minY) minY = pt.y;
+                        if (pt.x > maxX) maxX = pt.x;
+                        if (pt.y > maxY) maxY = pt.y;
+                    });
+                });
+
+                if (minX === Infinity) return;
+
+                const cw = maxX - minX;
+                const ch = maxY - minY;
+                const cx = minX + cw / 2;
+                const cy = minY + ch / 2;
+
+                const zoomW = (vw - padding * 2) / (cw || 100);
+                const zoomH = (vh - padding * 2) / (ch || 100);
+                
+                let newZoom = Math.min(zoomW, zoomH);
+                newZoom = Math.min(2, Math.max(0.25, newZoom));
+
+                const newPanX = (vw / 2) - (cx * newZoom);
+                const newPanY = (vh / 2) - (cy * newZoom);
+
+                setZoom(newZoom);
+                setPan({ x: newPanX, y: newPanY });
+            };
+            
+             // --- DOWNLOAD IMAGE ---
+            const handleDownloadImage = () => {
+                if (components.length === 0) return;
+                
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                components.forEach(c => {
+                    const w = c.width * SNAP; const h = c.height * SNAP;
+                    if (c.x < minX) minX = c.x; if (c.y < minY) minY = c.y;
+                    if (c.x + w > maxX) maxX = c.x + w; if (c.y + h > maxY) maxY = c.y + h;
+                });
+                wires.forEach(w => {
+                    const p1 = getTerminalPos(w.startCompId, w.startTerm);
+                    const p2 = getTerminalPos(w.endCompId, w.endTerm);
+                    [p1, p2, ...w.waypoints].forEach(pt => {
+                         if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y;
+                         if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y;
+                    });
+                });
+
+                if (minX === Infinity) return;
+                
+                const padding = 40;
+                const width = maxX - minX + padding * 2;
+                const height = maxY - minY + padding * 2;
+                
+                const svgNode = svgRef.current;
+                const clone = svgNode.cloneNode(true);
+                
+                clone.setAttribute('width', width * 2); 
+                clone.setAttribute('height', height * 2);
+                clone.setAttribute('viewBox', `${minX - padding} ${minY - padding} ${width} ${height}`);
+                clone.style.backgroundColor = 'white'; 
+
+                // --- REMOVE GRID DOTS ---
+                const gridRect = clone.querySelector('rect[fill="url(#grid)"]');
+                if (gridRect) {
+                     // Instead of changing fill, we remove the fill pattern reference
+                     // Or just set fill to white to hide the dots
+                     gridRect.setAttribute('fill', 'white'); 
+                     // Also ensure it covers the area
+                     gridRect.setAttribute('x', minX - padding);
+                     gridRect.setAttribute('y', minY - padding);
+                     gridRect.setAttribute('width', width);
+                     gridRect.setAttribute('height', height);
+                }
+
+                // --- REMOVE SIMULATION EFFECTS ---
+                const displays = clone.querySelectorAll('.sim-display');
+                displays.forEach(el => el.remove());
+                const visibleSims = clone.querySelectorAll('.sim-visible');
+                visibleSims.forEach(el => el.remove());
+                const filledSims = clone.querySelectorAll('.sim-fill');
+                filledSims.forEach(el => {
+                    el.setAttribute('fill', 'white');
+                    el.setAttribute('fill-opacity', '1');
+                });
+
+
+                // --- WATERMARK ---
+                const watermarkGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                const wmX = maxX + padding - 10;
+                const wmY = maxY + padding - 10;
+                watermarkGroup.setAttribute("transform", `translate(${wmX}, ${wmY})`);
+                
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", "0"); 
+                text.setAttribute("y", "5"); 
+                text.setAttribute("text-anchor", "end");
+                text.setAttribute("font-family", "sans-serif");
+                text.setAttribute("font-size", "8"); 
+                text.setAttribute("fill", "#999");
+                text.setAttribute("font-weight", "bold");
+                text.textContent = "Made with ♥ & Banana Plugs"; 
+                watermarkGroup.appendChild(text);
+
+                const mainGroup = clone.querySelector('g');
+                if (mainGroup) {
+                    mainGroup.setAttribute('transform', ''); 
+                    mainGroup.appendChild(watermarkGroup);
+                }
+
+                const svgString = new XMLSerializer().serializeToString(clone);
+                const img = new Image();
+                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(svgBlob);
+                
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width * 2;
+                    canvas.height = height * 2;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, width * 2, height * 2);
+                    
+                    const pngUrl = canvas.toDataURL('image/png');
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = pngUrl;
+                    downloadLink.download = `${projectName || 'circuito'}_banana_plugs.png`; // USAR NOMBRE DE PROYECTO
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                    URL.revokeObjectURL(url);
+                };
+                img.src = url;
+            };
+
+            // ... (Audio effect logic unchanged)
+            useEffect(() => {
+                const isBuzzing = components.some(c => c.type === COMP_TYPES.BUZZER && Math.abs(compVoltages[c.id] || 0) >= 6);
+                if (isBuzzing) {
+                    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume().catch(e => console.log(e));
+                    if (!oscillatorRef.current && audioCtxRef.current.state === 'running') {
+                        const osc = audioCtxRef.current.createOscillator();
+                        const gain = audioCtxRef.current.createGain();
+                        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, audioCtxRef.current.currentTime);
+                        gain.gain.setValueAtTime(0.1, audioCtxRef.current.currentTime);
+                        osc.connect(gain); gain.connect(audioCtxRef.current.destination);
+                        osc.start(); oscillatorRef.current = osc; gainNodeRef.current = gain;
+                    }
+                } else if (oscillatorRef.current) {
+                    oscillatorRef.current.stop(); oscillatorRef.current.disconnect();
+                    gainNodeRef.current.disconnect(); oscillatorRef.current = null; gainNodeRef.current = null;
+                }
+            }, [compVoltages, components]);
+
+            // ... (rest of hooks unchanged)
+            const updateCircuit = (newComponents, newWires) => {
+                const newHistory = history.slice(0, currentStep + 1);
+                newHistory.push({ components: newComponents, wires: newWires });
+                setHistory(newHistory);
+                setCurrentStep(newHistory.length - 1);
+                setComponents(newComponents);
+                setWires(newWires);
+            };
+
+            const undo = () => { if (currentStep > 0) { const prev = currentStep - 1; setComponents(history[prev].components); setWires(history[prev].wires); setCurrentStep(prev); } };
+            const redo = () => { if (currentStep < history.length - 1) { const next = currentStep + 1; setComponents(history[next].components); setWires(history[next].wires); setCurrentStep(next); } };
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.key === 'Escape') { setDrawingWire(null); setSelectedCompId(null); }
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+                };
+                window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [currentStep, history]);
+
+            const handleZoomIn = () => setZoom(z => Math.min(2, z + 0.25));
+            const handleZoomOut = () => setZoom(z => Math.max(0.25, z - 0.25));
+            const handleWheel = (e) => {
+                const rect = svgRef.current.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+                const worldX = (mouseX - pan.x) / zoom; const worldY = (mouseY - pan.y) / zoom;
+                const direction = e.deltaY > 0 ? -1 : 1;
+                const newZoom = Math.min(2, Math.max(0.25, zoom + direction * 0.1));
+                if (newZoom === zoom) return;
+                setZoom(newZoom); setPan({ x: mouseX - worldX * newZoom, y: mouseY - worldY * newZoom });
+            };
+            const getWorldPosition = (clientX, clientY) => {
+                if (!svgRef.current) return { x: 0, y: 0 };
+                const rect = svgRef.current.getBoundingClientRect();
+                return { x: (clientX - rect.left - pan.x) / zoom, y: (clientY - rect.top - pan.y) / zoom };
+            }
+
+            useEffect(() => { solveCircuit(); }, [components, wires]);
+            const solveCircuit = () => {
+                const terminalToNet = new Map(); let netCounter = 0;
+                const getTermKey = (cId, tId) => `${cId}_${tId}`;
+                components.forEach(c => { const t = CATALOG.find(x => x.type === c.type); if(t) t.terminals.forEach(term => terminalToNet.set(getTermKey(c.id, term.id), netCounter++)); });
+                const mergeNets = (t1, t2) => {
+                    const n1 = terminalToNet.get(t1); const n2 = terminalToNet.get(t2);
+                    if (n1 !== undefined && n2 !== undefined && n1 !== n2) { for (let [t, n] of terminalToNet) if (n === n2) terminalToNet.set(t, n1); }
+                };
+                wires.forEach(w => mergeNets(getTermKey(w.startCompId, w.startTerm), getTermKey(w.endCompId, w.endTerm)));
+                
+                components.forEach(c => {
+                    if (c.type === COMP_TYPES.SWITCH || c.type === COMP_TYPES.PUSH_NO) { if (c.state) mergeNets(getTermKey(c.id, 't1'), getTermKey(c.id, 't2')); }
+                    else if (c.type === COMP_TYPES.PUSH_NC) { if (!c.state) mergeNets(getTermKey(c.id, 't1'), getTermKey(c.id, 't2')); }
+                    else if (c.type === COMP_TYPES.TOGGLE_SWITCH) { if (!c.state) mergeNets(getTermKey(c.id, 'common'), getTermKey(c.id, 't1')); else mergeNets(getTermKey(c.id, 'common'), getTermKey(c.id, 't2')); }
+                    else if (c.type === COMP_TYPES.DOUBLE_TOGGLE_SWITCH) {
+                        // Switch 1
+                        if (!c.state) mergeNets(getTermKey(c.id, 'common1'), getTermKey(c.id, 't1_1')); 
+                        else mergeNets(getTermKey(c.id, 'common1'), getTermKey(c.id, 't2_1'));
+                        // Switch 2 (Sincronizado)
+                        if (!c.state) mergeNets(getTermKey(c.id, 'common2'), getTermKey(c.id, 't1_2')); 
+                        else mergeNets(getTermKey(c.id, 'common2'), getTermKey(c.id, 't2_2'));
+                    }
+                    else if (c.type === COMP_TYPES.CROSSOVER) {
+                         if (!c.state) { mergeNets(getTermKey(c.id, 't1'), getTermKey(c.id, 't3')); mergeNets(getTermKey(c.id, 't2'), getTermKey(c.id, 't4')); }
+                         else { mergeNets(getTermKey(c.id, 't1'), getTermKey(c.id, 't4')); mergeNets(getTermKey(c.id, 't2'), getTermKey(c.id, 't3')); }
+                    }
+                });
+
+                const posMap = new Map();
+                components.forEach(c => { const t = CATALOG.find(x => x.type === c.type); t.terminals.forEach(term => { const pos = getTerminalPos(c.id, term.id); const key = `${Math.round(pos.x)},${Math.round(pos.y)}`; if (!posMap.has(key)) posMap.set(key, []); posMap.get(key).push(getTermKey(c.id, term.id)); }); });
+                posMap.forEach(keys => { if (keys.length > 1) for (let i = 1; i < keys.length; i++) mergeNets(keys[0], keys[i]); });
+
+                const uniqueNets = Array.from(new Set(terminalToNet.values()));
+                const netVoltages = {}; const fixedNets = new Set();
+                uniqueNets.forEach(n => netVoltages[n] = 0);
+                
+                const batteries = components.filter(c => c.type === COMP_TYPES.BATTERY);
+                if (batteries.length > 0) { const ref = terminalToNet.get(getTermKey(batteries[0].id, 't2')); netVoltages[ref] = 0; fixedNets.add(ref); }
+                else { setCompVoltages({}); return; }
+
+                let change = true; let loops = 0;
+                while(change && loops < 50) {
+                    change = false; loops++;
+                    batteries.forEach(bat => {
+                        const nPos = terminalToNet.get(getTermKey(bat.id, 't1')); const nNeg = terminalToNet.get(getTermKey(bat.id, 't2')); const v = bat.properties.voltage || 9;
+                        if (fixedNets.has(nNeg) && !fixedNets.has(nPos)) { netVoltages[nPos] = netVoltages[nNeg] + v; fixedNets.add(nPos); change = true; }
+                        else if (fixedNets.has(nPos) && !fixedNets.has(nNeg)) { netVoltages[nNeg] = netVoltages[nPos] - v; fixedNets.add(nNeg); change = true; }
+                    });
+                }
+                
+                for(let iter=0; iter<ITERATIONS; iter++) {
+                    const nextVoltages = { ...netVoltages };
+                    uniqueNets.forEach(netId => {
+                        if (fixedNets.has(netId)) return;
+                        let num = 0; let den = 0;
+                        components.forEach(c => {
+                            if (c.type === COMP_TYPES.POTENTIOMETER) {
+                                const R = c.properties.resistance || 100; const pos = c.properties.position || 0.5;
+                                const r1 = Math.max(0.1, R * pos); const r2 = Math.max(0.1, R * (1-pos));
+                                const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2')); const nw = terminalToNet.get(getTermKey(c.id, 'wiper'));
+                                if (netId === n1 && nw !== undefined) { num += netVoltages[nw]/r1; den += 1/r1; }
+                                if (netId === n2 && nw !== undefined) { num += netVoltages[nw]/r2; den += 1/r2; }
+                                if (netId === nw) { if (n1 !== undefined) { num += netVoltages[n1]/r1; den += 1/r1; } if (n2 !== undefined) { num += netVoltages[n2]/r2; den += 1/r2; } }
+                            } else if (c.type === COMP_TYPES.LED) {
+                                const nA = terminalToNet.get(getTermKey(c.id, 'anode')); const nC = terminalToNet.get(getTermKey(c.id, 'cathode'));
+                                const vF = c.properties.forwardVoltage || 2; const rL = c.properties.resistance || 1;
+                                if (netVoltages[nA] > netVoltages[nC] + vF - 0.1) {
+                                    if (netId === nA && nC !== undefined) { num += (netVoltages[nC] + vF)/rL; den += 1/rL; }
+                                    if (netId === nC && nA !== undefined) { num += (netVoltages[nA] - vF)/rL; den += 1/rL; }
+                                }
+                            } else if ([COMP_TYPES.BULB, COMP_TYPES.BUZZER, COMP_TYPES.MOTOR_DC, COMP_TYPES.RESISTOR, COMP_TYPES.AMMETER, COMP_TYPES.VOLTMETER].includes(c.type)) {
+                                const r = Math.max(0.001, (c.properties.resistance * (c.properties.unit||1)) || 10);
+                                const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
+                                if (netId === n1 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
+                                if (netId === n2 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
+                            } else if (c.type === COMP_TYPES.CROSSOVER) {
+                                const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
+                                const n3 = terminalToNet.get(getTermKey(c.id, 't3')); const n4 = terminalToNet.get(getTermKey(c.id, 't4'));
+                                const r = 0.001;
+                                if (!c.state) { // Direct
+                                    if (netId === n1 && n3 !== undefined) { num += netVoltages[n3]/r; den += 1/r; } if (netId === n3 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
+                                    if (netId === n2 && n4 !== undefined) { num += netVoltages[n4]/r; den += 1/r; } if (netId === n4 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
+                                } else { // Cross
+                                    if (netId === n1 && n4 !== undefined) { num += netVoltages[n4]/r; den += 1/r; } if (netId === n4 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
+                                    if (netId === n2 && n3 !== undefined) { num += netVoltages[n3]/r; den += 1/r; } if (netId === n3 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
+                                }
+                            }
+                        });
+                        if (den > 0) nextVoltages[netId] = num / den;
+                    });
+                    Object.assign(netVoltages, nextVoltages);
+                }
+
+                const newCompVals = {};
+                components.forEach(c => {
+                    if (c.type === COMP_TYPES.LED) {
+                        const nA = terminalToNet.get(getTermKey(c.id, 'anode')); const nC = terminalToNet.get(getTermKey(c.id, 'cathode'));
+                        newCompVals[c.id] = (netVoltages[nA]||0) - (netVoltages[nC]||0);
+                    } else if (c.type !== COMP_TYPES.POTENTIOMETER && c.type !== COMP_TYPES.TOGGLE_SWITCH && c.type !== COMP_TYPES.SWITCH && c.type !== COMP_TYPES.CROSSOVER) {
+                        const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
+                        newCompVals[c.id] = (netVoltages[n1]||0) - (netVoltages[n2]||0);
+                    }
+                });
+                setCompVoltages(newCompVals);
+            };
+
+            // --- Handlers modified for History ---
+            const updateComponentProperty = (id, key, value) => {
+                const newComps = components.map(c => c.id === id ? { ...c, properties: { ...c.properties, [key]: value } } : c);
+                updateCircuit(newComps, wires);
+            };
+            const updateComponentProperties = (id, props) => {
+                const newComps = components.map(c => c.id === id ? { ...c, properties: { ...c.properties, ...props } } : c);
+                updateCircuit(newComps, wires);
+            };
+            const deleteComponent = () => { updateCircuit([], []); setSelectedCompId(null); setDrawingWire(null); };
+            const removeWire = (id) => { updateCircuit(components, wires.filter(w => w.id !== id)); };
+            const handleDragStart = (e, type) => { e.dataTransfer.setData('componentType', type); };
+            const handleDragOver = (e) => { e.preventDefault(); };
+            const handleDrop = (e) => {
+                e.preventDefault(); const type = e.dataTransfer.getData('componentType'); if (!type) return;
+                const pos = getWorldPosition(e.clientX, e.clientY);
+                const template = CATALOG.find(c => c.type === type);
+                const finalX = pos.x ? snapToGrid(pos.x - (template.w * SNAP) / 2) : 100;
+                const finalY = pos.y ? snapToGrid(pos.y - (template.h * SNAP) / 2) : 100;
+                const prefix = TYPE_PREFIXES[type] || 'C';
+                const count = components.filter(c => c.type === type).length + 1;
+                const newComp = { id: generateId(), type: type, x: finalX, y: finalY, rotation: 0, state: false, width: template.w, height: template.h, properties: { ...template.properties, alias: `${prefix}${count}` } };
+                updateCircuit([...components, newComp], wires);
+                setSelectedCompId(newComp.id);
+            };
+            const addComponent = (type) => {
+                const template = CATALOG.find(c => c.type === type);
+                const prefix = TYPE_PREFIXES[type] || 'C';
+                const count = components.filter(c => c.type === type).length + 1;
+                const newComp = { id: generateId(), type: type, x: 100, y: 100, rotation: 0, state: false, width: template.w, height: template.h, properties: { ...template.properties, alias: `${prefix}${count}` } };
+                updateCircuit([...components, newComp], wires);
+                setSelectedCompId(newComp.id);
+            };
+            const removeComponent = (id) => {
+                updateCircuit(components.filter(c => c.id !== id), wires.filter(w => w.startCompId !== id && w.endCompId !== id));
+                if (selectedCompId === id) setSelectedCompId(null);
+            };
+            
+            // --- MOVED UP: Main Handlers ---
+            const handleMouseDownComp = (e, comp) => {
+                e.stopPropagation(); if (drawingWire) return;
+                setSelectedCompId(comp.id);
+                if (comp.type === COMP_TYPES.PUSH_NO || comp.type === COMP_TYPES.PUSH_NC) {
+                     const newComps = components.map(c => c.id === comp.id ? { ...c, state: true } : c);
+                     updateCircuit(newComps, wires);
+                }
+                const pos = getWorldPosition(e.clientX, e.clientY);
+                setDraggingComp(comp.id); setDragOffset({ x: pos.x - comp.x, y: pos.y - comp.y });
+            };
+
+            const handleMouseDownBg = (e) => {
+                if (drawingWire) {
+                    const pos = getWorldPosition(e.clientX, e.clientY);
+                    const mouseX = snapToGrid(pos.x); const mouseY = snapToGrid(pos.y);
+                    const lastPoint = drawingWire.waypoints.length > 0 ? drawingWire.waypoints[drawingWire.waypoints.length - 1] : { x: drawingWire.startX, y: drawingWire.startY };
+                    const newWaypoints = [...drawingWire.waypoints];
+                    if (lastPoint.x !== mouseX && lastPoint.y !== mouseY) {
+                        const midX = snapToGrid((lastPoint.x + mouseX) / 2);
+                        newWaypoints.push({ x: midX, y: lastPoint.y }); newWaypoints.push({ x: midX, y: mouseY });
+                    }
+                    newWaypoints.push({ x: mouseX, y: mouseY });
+                    setDrawingWire({ ...drawingWire, waypoints: newWaypoints, currentX: mouseX, currentY: mouseY });
+                    return;
+                }
+                setIsPanning(true); setPanStart({ x: e.clientX, y: e.clientY }); setSelectedCompId(null);
+            };
+
+            const handleMouseUpComp = (e, comp) => {
+                if (comp.type === COMP_TYPES.PUSH_NO || comp.type === COMP_TYPES.PUSH_NC) {
+                    const newComps = components.map(c => c.id === comp.id ? { ...c, state: false } : c);
+                    updateCircuit(newComps, wires); // Ensure state updates on release
+                }
+            };
+            const handleClickSwitch = (e, comp) => {
+                e.stopPropagation(); if (drawingWire) return;
+                if ([COMP_TYPES.SWITCH, COMP_TYPES.TOGGLE_SWITCH, COMP_TYPES.DOUBLE_TOGGLE_SWITCH, COMP_TYPES.CROSSOVER].includes(comp.type)) {
+                    const newComps = components.map(c => c.id === comp.id ? { ...c, state: !c.state } : c);
+                    updateCircuit(newComps, wires);
+                }
+            };
+            const rotateComponent = (e, compId) => {
+                e.stopPropagation();
+                const newComps = components.map(c => {
+                    if (c.id !== compId) return c;
+                    const newRotation = (c.rotation + 90) % 360;
+                    const template = CATALOG.find(t => t.type === c.type);
+                    const isVertical = newRotation === 90 || newRotation === 270;
+                    const newWidth = isVertical ? template.h : template.w;
+                    const newHeight = isVertical ? template.w : template.h;
+                    return { ...c, rotation: newRotation, width: newWidth, height: newHeight };
+                });
+                updateCircuit(newComps, wires);
+            };
+            const handleMouseDownTerminal = (e, compId, termId) => {
+                e.stopPropagation();
+                if (drawingWire) {
+                    if (drawingWire.startCompId === compId && drawingWire.startTerm === termId) { setDrawingWire(null); return; }
+                    const exists = wires.some(w => (w.startCompId === drawingWire.startCompId && w.startTerm === drawingWire.startTerm && w.endCompId === compId && w.endTerm === termId) || (w.endCompId === drawingWire.startCompId && w.endTerm === drawingWire.startTerm && w.startCompId === compId && w.startTerm === termId));
+                    if (!exists) {
+                        const newWire = { id: generateId(), startCompId: drawingWire.startCompId, startTerm: drawingWire.startTerm, endCompId: compId, endTerm: termId, waypoints: drawingWire.waypoints };
+                        updateCircuit(components, [...wires, newWire]);
+                    }
+                    setDrawingWire(null);
+                } else {
+                    const pos = getTerminalPos(compId, termId);
+                    setDrawingWire({ startCompId: compId, startTerm: termId, startX: pos.x, startY: pos.y, waypoints: [], currentX: pos.x, currentY: pos.y });
+                    setSelectedCompId(null);
+                }
+            };
+            
+            const handleMouseUp = (e) => {
+                if (draggingComp) {
+                    const newHistory = history.slice(0, currentStep + 1);
+                    newHistory.push({ components: components, wires: wires });
+                    setHistory(newHistory);
+                    setCurrentStep(newHistory.length - 1);
+                }
+                setDraggingComp(null); setIsPanning(false);
+            };
+            const handleMouseMove = (e) => {
+                if (isPanning) {
+                    const dx = e.clientX - panStart.x; const dy = e.clientY - panStart.y;
+                    setPan(prev => ({ x: prev.x + dx, y: prev.y + dy })); setPanStart({ x: e.clientX, y: e.clientY }); return;
+                }
+                const pos = getWorldPosition(e.clientX, e.clientY);
+                if (draggingComp) {
+                    // Update state directly without history push for smooth drag
+                    setComponents(prev => prev.map(c => { if (c.id === draggingComp) return { ...c, x: snapToGrid(pos.x - dragOffset.x), y: snapToGrid(pos.y - dragOffset.y) }; return c; }));
+                }
+                if (drawingWire) setDrawingWire(prev => ({ ...prev, currentX: pos.x, currentY: pos.y }));
+            };
+
+            const renderComponent = (comp) => {
+                // ... (SymbolRenderer calls and rects same as before) ...
+                const isSelected = selectedCompId === comp.id;
+                const template = CATALOG.find(t => t.type === comp.type);
+                const isVertical = comp.rotation === 90 || comp.rotation === 270;
+                const ow = template.w * SNAP; const oh = template.h * SNAP;
+                let transformString = '';
+                if (comp.rotation === 90) transformString = `translate(${oh}, 0) rotate(90)`;
+                else if (comp.rotation === 180) transformString = `translate(${ow}, ${oh}) rotate(180)`;
+                else if (comp.rotation === 270) transformString = `translate(0, ${ow}) rotate(270)`;
+
+                const currentW = comp.width * SNAP; const currentH = comp.height * SNAP;
+
+                const renderPotSlider = () => {
+                    if (comp.type !== COMP_TYPES.POTENTIOMETER) return null;
+                    const pos = comp.properties.position !== undefined ? comp.properties.position : 0.5;
+                    const rotation = comp.rotation;
+                    
+                    let sliderX = 0, sliderY = 0;
+                    
+                    if (rotation === 0) { // Horizontal
+                        sliderX = 15; 
+                        sliderY = 70; // Bottom
+                    } else if (rotation === 180) { // Horizontal Inverted
+                        sliderX = 15; 
+                        sliderY = -55; // Top
+                    } else if (rotation === 90) { // Vertical Left -> Left side
+                         sliderX = -34; 
+                         sliderY = 40; 
+                    } else if (rotation === 270) { // Vertical Right -> Right side
+                         sliderX = 64; 
+                         sliderY = 40;
+                    }
+                    
+                    const handleX = sliderX + (pos * 30);
+                    
+                    const handleMouseDown = (e) => {
+                        e.stopPropagation();
+                         const rect = e.currentTarget.getBoundingClientRect();
+                         const x = e.clientX - rect.left;
+                         const width = rect.width;
+                         const newPos = Math.max(0, Math.min(1, x / width));
+                         updateComponentProperties(comp.id, { position: newPos });
+                    };
+                    
+                     const handleMouseMoveSlider = (e) => {
+                         if (e.buttons !== 1) return;
+                         e.stopPropagation();
+                         const rect = e.currentTarget.getBoundingClientRect();
+                         const x = e.clientX - rect.left;
+                         const width = rect.width;
+                         const newPos = Math.max(0, Math.min(1, x / width));
+                         updateComponentProperties(comp.id, { position: newPos });
+                    };
+
+                    return React.createElement("g", { className: "pot-slider-group" },
+                        React.createElement("rect", { 
+                            x: sliderX, y: sliderY, width: "30", height: "8", rx: "4", fill: "#e2e8f0", stroke: "#94a3b8", strokeWidth: "1",
+                            className: "cursor-ew-resize",
+                            onMouseDown: handleMouseDown,
+                            onMouseMove: handleMouseMoveSlider
+                        }),
+                        React.createElement("circle", { 
+                            cx: handleX, cy: sliderY + 4, r: "3", fill: "#3b82f6", stroke: "none", 
+                            className: "pointer-events-none"
+                        }),
+                        React.createElement("text", { 
+                            x: sliderX + 15, 
+                            y: sliderY + 20, 
+                            textAnchor: "middle", fontSize: "8", fill: "#666", className: "select-none pointer-events-none" 
+                        }, Math.round(pos * 100) + "%")
+                    );
+                };
+
+                return React.createElement("g", { key: comp.id, transform: `translate(${comp.x}, ${comp.y})`, className: "group" },
+                    React.createElement("g", { transform: transformString, onMouseDown: (e) => handleMouseDownComp(e, comp), onMouseUp: (e) => handleMouseUpComp(e, comp), className: "cursor-move" },
+                        React.createElement("rect", { 
+                            x: "-2", y: "-2", width: template.w * SNAP + 4, height: template.h * SNAP + 4, 
+                            fill: "transparent", stroke: isSelected ? "#3B82F6" : "transparent", strokeWidth: "1", strokeDasharray: "4,2", rx: "4"
+                        }),
+                        React.createElement(SymbolRenderer, { type: comp.type, state: comp.state, voltageDrop: compVoltages[comp.id], properties: comp.properties, onUpdateProp: (k, v) => updateComponentProperties(comp.id, { [k]: v }), isIcon: false }),
+                        (comp.type === COMP_TYPES.TOGGLE_SWITCH || comp.type === COMP_TYPES.DOUBLE_TOGGLE_SWITCH || comp.type === COMP_TYPES.SWITCH || comp.type === COMP_TYPES.CROSSOVER) && React.createElement("rect", {
+                            x: "0", y: "0", width: template.w * SNAP, height: template.h * SNAP, fill: "transparent", className: "cursor-pointer", onClick: (e) => handleClickSwitch(e, comp)
+                        })
+                    ),
+                    renderPotSlider(),
+                    
+                    // --- ETIQUETAS DE ALIAS Y VALORES ---
+
+                    // Resistencia
+                    comp.type === COMP_TYPES.RESISTOR && React.createElement("text", {
+                         x: isVertical ? -10 : currentW / 2, 
+                         y: isVertical ? (currentH / 2) - 6 : -10, 
+                         textAnchor: isVertical ? "end" : "middle", 
+                         fontSize: "12", fontWeight: "bold", fill: "#333", 
+                         className: "pointer-events-none select-none"
+                    }, comp.properties.alias),
+                    comp.type === COMP_TYPES.RESISTOR && React.createElement("text", { // Valor
+                         x: isVertical ? -10 : currentW / 2, 
+                         y: isVertical ? (currentH / 2) + 8 : currentH + 4, 
+                         textAnchor: isVertical ? "end" : "middle", 
+                         fontSize: "10", fill: "#666",
+                         className: "pointer-events-none select-none"
+                    }, getResistorLabel(comp.properties)),
+
+                    // Potenciómetro (CUSTOM LOGIC)
+                    comp.type === COMP_TYPES.POTENTIOMETER && React.createElement("text", {
+                         // Alias Position
+                         x: (comp.rotation === 180) ? currentW / 2 : (comp.rotation === 90 ? -4 : (comp.rotation === 270 ? 64 : currentW / 2)),
+                         y: (comp.rotation === 180) ? -10 : (isVertical ? 10 : -10),
+                         textAnchor: (isVertical && comp.rotation === 90) ? "end" : (isVertical && comp.rotation === 270 ? "start" : "middle"), 
+                         fontSize: "12", fontWeight: "bold", fill: "#333",
+                         className: "pointer-events-none select-none"
+                    }, comp.properties.alias),
+                    comp.type === COMP_TYPES.POTENTIOMETER && React.createElement("text", {
+                         // Value Position
+                         x: (comp.rotation === 180) ? currentW / 2 : (comp.rotation === 90 ? -4 : (comp.rotation === 270 ? 64 : currentW / 2)),
+                         y: (comp.rotation === 180) ? -25 : (isVertical ? 25 : 64),
+                         textAnchor: (isVertical && comp.rotation === 90) ? "end" : (isVertical && comp.rotation === 270 ? "start" : "middle"), 
+                         fontSize: "10", fill: "#666", className: "pointer-events-none select-none"
+                    }, getResistorLabel(comp.properties)),
+
+                    // Batería
+                    comp.type === COMP_TYPES.BATTERY && React.createElement("text", { 
+                        x: isVertical ? -10 : currentW / 2, 
+                        y: isVertical ? (currentH / 2) - 6 : -10, 
+                        textAnchor: isVertical ? "end" : "middle", 
+                        fontSize: "12", fontWeight: "bold", fill: "#333", className: "pointer-events-none select-none"
+                    }, 
+                        comp.properties.alias
+                    ),
+                    comp.type === COMP_TYPES.BATTERY && React.createElement("text", { 
+                        x: isVertical ? -10 : currentW / 2, 
+                        y: isVertical ? (currentH / 2) + 8 : currentH + 4, 
+                        textAnchor: isVertical ? "end" : "middle", 
+                        fontSize: "10", fill: "#666", className: "pointer-events-none select-none"
+                    }, comp.properties.voltage + "V"),
+
+                    // LED
+                    comp.type === COMP_TYPES.LED && React.createElement("text", {
+                         x: isVertical ? -10 : currentW / 2, y: isVertical ? currentH / 2 : -10, 
+                         textAnchor: isVertical ? "end" : "middle", 
+                         fontSize: "12", fontWeight: "bold", fill: "#333", className: "pointer-events-none select-none"
+                    }, comp.properties.alias),
+                    
+                    // Instruments
+                    (comp.type === COMP_TYPES.VOLTMETER || comp.type === COMP_TYPES.AMMETER) && React.createElement("text", {
+                         x: isVertical ? -55 : currentW / 2, 
+                         y: isVertical ? 0 : -10, 
+                         textAnchor: isVertical ? "middle" : "middle", 
+                         fontSize: "12", fontWeight: "bold", fill: "#333", className: "pointer-events-none select-none"
+                    }, comp.properties.alias || (comp.type === COMP_TYPES.VOLTMETER ? "V" : "A")),
+
+                    comp.type === COMP_TYPES.VOLTMETER && React.createElement("g", { 
+                        transform: !isVertical ? `translate(${currentW / 2 - 21}, ${currentH + 8})` : `translate(${-55 - 21}, ${15})`, 
+                        style: { pointerEvents: 'none' },
+                        className: "sim-display" // ADDED THIS
+                    },
+                        React.createElement("g", { transform: !isVertical ? "" : "translate(0, 0)" },
+                             React.createElement("rect", { x: "0", y: "0", width: "42", height: "16", rx: "2", fill: "white", stroke: "black", strokeWidth: "1" }),
+                             React.createElement("text", { x: "21", y: "11", textAnchor: "middle", fontSize: "10", fontFamily: "monospace", fill: "black", fontWeight: "bold" }, (compVoltages[comp.id] || 0).toFixed(2) + "V"),
+                             !isVertical ? React.createElement("path", { d: "M 21 -8 L 21 0", stroke: "#94a3b8", strokeWidth: "1" }) : React.createElement("path", { d: "M 42 8 L 72 8", stroke: "#94a3b8", strokeWidth: "1" })
+                        )
+                    ),
+                    comp.type === COMP_TYPES.AMMETER && React.createElement("g", { 
+                        transform: !isVertical ? `translate(${currentW / 2 - 28}, ${currentH + 8})` : `translate(${-66 - 20}, ${15})`, 
+                        style: { pointerEvents: 'none' },
+                        className: "sim-display" // ADDED THIS
+                    },
+                         React.createElement("g", { transform: !isVertical ? "" : "translate(0, 0)" },
+                            React.createElement("rect", { x: "0", y: "0", width: "56", height: "16", rx: "2", fill: "white", stroke: "black", strokeWidth: "1" }),
+                            React.createElement("text", { x: "28", y: "11", textAnchor: "middle", fontSize: "10", fontFamily: "monospace", fill: "black", fontWeight: "bold" },
+                                (() => {
+                                    const r = comp.properties.resistance || 0.001; const v = compVoltages[comp.id] || 0; const i = v / r; 
+                                    if (Math.abs(i) < 1) { return (i * 1000).toFixed(1) + "mA"; } return i.toFixed(2) + "A";
+                                })()
+                            ),
+                            !isVertical ? React.createElement("path", { d: "M 28 -8 L 28 0", stroke: "#94a3b8", strokeWidth: "1" }) : React.createElement("path", { d: "M 56 8 L 86 8", stroke: "#94a3b8", strokeWidth: "1" })
+                        )
+                    ),
+
+                    // Generic Alias
+                    ![COMP_TYPES.RESISTOR, COMP_TYPES.POTENTIOMETER, COMP_TYPES.BATTERY, COMP_TYPES.LED, COMP_TYPES.VOLTMETER, COMP_TYPES.AMMETER].includes(comp.type) && comp.properties?.alias && React.createElement("text", {
+                         x: isVertical ? -10 : currentW / 2, 
+                         y: isVertical ? currentH / 2 : -10, 
+                         textAnchor: isVertical ? "end" : "middle", 
+                         fontSize: "12", fontWeight: "bold", fill: "#333", className: "pointer-events-none select-none"
+                    }, comp.properties.alias),
+
+                    // --- ETIQUETA CRUZAMIENTO ---
+                    comp.type === COMP_TYPES.CROSSOVER && React.createElement("text", {
+                        x: isVertical ? -10 : currentW / 2, y: isVertical ? currentH / 2 : -10, 
+                        textAnchor: isVertical ? "end" : "middle", fontSize: "12", fontWeight: "bold", fill: "#333", className: "pointer-events-none select-none"
+                    }, comp.properties.alias),
+
+                    // ... (Delete and Rotate buttons unchanged) ...
+                    isSelected && React.createElement("g", { transform: `translate(0, -25)` },
+                        React.createElement("g", { transform: "translate(0, 0)", className: "cursor-pointer hover:opacity-80", onClick: (e) => { e.stopPropagation(); removeComponent(comp.id); }, onMouseDown: (e) => e.stopPropagation() },
+                            React.createElement("rect", { width: "20", height: "20", rx: "4", fill: "#FEF2F2", stroke: "#EF4444", strokeWidth: "1" }),
+                            React.createElement(Trash2, { size: 14, x: "3", y: "3", color: "#EF4444" })
+                        ),
+                        React.createElement("g", { transform: `translate(${currentW - 20}, 0)`, className: "cursor-pointer hover:opacity-80", onClick: (e) => rotateComponent(e, comp.id), onMouseDown: (e) => e.stopPropagation() },
+                            React.createElement("rect", { width: "20", height: "20", rx: "4", fill: "#E0F2FE", stroke: "#3B82F6", strokeWidth: "1" }),
+                            React.createElement(RotateCw, { size: 14, x: "3", y: "3", color: "#1D4ED8" })
+                        )
+                    ),
+                    template.terminals.map(t => {
+                        const absPos = getTerminalPos(comp.id, t.id);
+                        return React.createElement("circle", { key: t.id, cx: absPos.x - comp.x, cy: absPos.y - comp.y, r: 6, fill: "transparent", stroke: "transparent", className: "cursor-pointer", onMouseDown: (e) => handleMouseDownTerminal(e, comp.id, t.id) });
+                    }),
+                    template.terminals.map(t => {
+                        const absPos = getTerminalPos(comp.id, t.id);
+                        const isStart = drawingWire?.startCompId === comp.id && drawingWire?.startTerm === t.id;
+                        return React.createElement("rect", { key: `vis-${t.id}`, x: absPos.x - comp.x - 2, y: absPos.y - comp.y - 2, width: 4, height: 4, fill: isStart ? "blue" : "black", className: "pointer-events-none" });
+                    })
+                );
+            };
+
+            return React.createElement("div", { className: "flex flex-col h-screen bg-gray-100 font-sans select-none overflow-hidden" },
+                // --- BARRA SUPERIOR REORGANIZADA ---
+                React.createElement("div", { className: "bg-white border-b border-gray-300 p-2 flex items-center gap-3 z-20 shadow-sm" },
+                    
+                    // 1. LOGO + TÍTULO (Banana Plugs) + INFO
+                    React.createElement("div", { className: "flex items-center gap-2 pr-2 border-r border-gray-300" },
+                        React.createElement(Banana, { className: "w-6 h-6 text-yellow-600 fill-yellow-400" }),
+                        React.createElement("span", { className: "text-lg font-bold text-gray-800" }, "Banana Plugs"),
+                        React.createElement("button", { onClick: () => setShowInfoModal(true), className: "ml-1 p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-blue-500 transition-colors", title: "Información" },
+                            React.createElement(Info, { size: 20 })
+                        )
+                    ),
+
+                    // 2. CAJA NOMBRE DE PROYECTO
+                    React.createElement("div", { className: "flex items-center" },
+                        React.createElement("input", { 
+                            type: "text", 
+                            value: projectName, 
+                            onChange: (e) => setProjectName(e.target.value),
+                            placeholder: "Nombre del Proyecto",
+                            className: "px-2 py-1.5 bg-gray-50 hover:bg-white border border-transparent hover:border-gray-300 focus:border-blue-500 rounded transition-all text-sm font-medium text-gray-700 w-40 text-center"
+                        })
+                    ),
+                    
+                    // 3. IMPORTAR (Flecha Arriba) / EXPORTAR JSON (Flecha Abajo)
+                    React.createElement("div", { className: "flex items-center gap-1" },
+                         // Importar
+                         React.createElement("div", { className: "relative group" },
+                             React.createElement("input", { type: "file", accept: ".json", className: "hidden", ref: fileInputRef, onChange: handleImportJSON }),
+                             React.createElement("button", { onClick: handleTriggerImport, className: "p-2 hover:bg-blue-50 text-gray-700 hover:text-blue-600 rounded transition-colors", title: "Importar Proyecto (.json)" }, 
+                                React.createElement(Upload, { size: 20 }) 
+                             )
+                         ),
+                         // Exportar JSON (con icono Download)
+                         React.createElement("button", { onClick: handleExportJSON, className: "p-2 hover:bg-green-50 text-gray-700 hover:text-green-600 rounded transition-colors", title: "Exportar Proyecto (.json)" }, 
+                            React.createElement(Download, { size: 20 })
+                         )
+                    ),
+
+                    // 4. DESCARGAR IMAGEN (Icono Imagen)
+                    React.createElement("div", { className: "flex items-center border-r border-gray-300 pr-3" },
+                         React.createElement("button", { onClick: handleDownloadImage, className: "p-2 hover:bg-purple-50 text-gray-700 hover:text-purple-600 rounded transition-colors", title: "Descargar Imagen (.png)" }, 
+                            React.createElement(ImageIcon, { size: 20 })
+                         )
+                    ),
+
+                    // 5. UNDO / REDO (Antes de borrar para agrupar edición)
+                    React.createElement("div", { className: "flex items-center gap-1" },
+                        React.createElement("button", { onClick: undo, className: `p-2 rounded hover:bg-gray-100 ${currentStep === 0 ? 'text-gray-300' : 'text-gray-700'}` }, React.createElement(Undo2, { size: 20 })),
+                        React.createElement("button", { onClick: redo, className: `p-2 rounded hover:bg-gray-100 ${currentStep === history.length - 1 ? 'text-gray-300' : 'text-gray-700'}` }, React.createElement(Redo2, { size: 20 }))
+                    ),
+
+                    // 6. BORRAR LIENZO
+                    React.createElement("button", { 
+                        onClick: deleteComponent, 
+                        className: "p-2 rounded text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors",
+                        title: "Borrar todo el lienzo"
+                    }, 
+                        React.createElement(Trash2, { size: 20 })
+                    ),
+
+                    // ESPACIADOR
+                    React.createElement("div", { className: "flex-grow" }),
+
+                    // 7. ZOOM Y VISTA (Alineado a la derecha)
+                    React.createElement("div", { className: "flex items-center gap-1 pl-3 border-l border-gray-300" },
+                         React.createElement("button", { onClick: handleZoomOut, className: "p-2 hover:bg-gray-100 rounded text-gray-700" }, React.createElement(ZoomOut, { size: 20 })),
+                         React.createElement("span", { className: "text-xs font-mono font-medium text-gray-500 w-12 text-center" }, Math.round(zoom * 100) + "%"),
+                         React.createElement("button", { onClick: handleZoomIn, className: "p-2 hover:bg-gray-100 rounded text-gray-700" }, React.createElement(ZoomIn, { size: 20 })),
+                         React.createElement("button", { onClick: handleFitView, className: "p-2 hover:bg-gray-100 rounded text-gray-700 ml-1", title: "Ajustar vista" }, React.createElement(Maximize, { size: 20 }))
+                    )
+                ),
+
+                React.createElement("div", { className: "flex flex-grow overflow-hidden" },
+                    // SIDEBAR (Left)
+                    React.createElement("div", { className: "w-24 bg-white border-r border-gray-300 flex flex-col shadow-sm z-10 overflow-y-auto" },
+                        React.createElement("div", { className: "flex flex-col p-1 gap-0.5" },
+                            CATALOG.map(item => {
+                                const vbW = item.w * SNAP; const vbH = item.h * SNAP;
+                                return React.createElement("button", {
+                                    key: item.type, draggable: "true", onDragStart: (e) => handleDragStart(e, item.type), onClick: () => addComponent(item.type),
+                                    className: "flex flex-col items-center justify-center py-1 px-0.5 rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors group cursor-grab active:cursor-grabbing w-full" 
+                                },
+                                    React.createElement("div", { className: "w-10 h-8 flex items-center justify-center mb-0 relative pointer-events-none" }, 
+                                        React.createElement("svg", { viewBox: `0 0 ${vbW} ${vbH}`, width: "100%", height: "100%", className: "pointer-events-none" },
+                                            React.createElement(SymbolRenderer, { type: item.type, state: false, isLit: false, properties: item.properties || { voltage: 9 }, isIcon: true })
+                                        )
+                                    ),
+                                    React.createElement("span", { className: "text-[9px] text-gray-700 font-medium group-hover:text-blue-700 text-center leading-tight" }, item.label)
+                                );
+                            })
+                        )
+                    ),
+
+                    // MAIN CANVAS AREA
+                    React.createElement("div", { className: "flex-grow relative cursor-crosshair h-full bg-gray-100" },
+                         // Floating "Wire Mode" Badge
+                        drawingWire && React.createElement("div", { className: "absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-1.5 rounded-full text-xs font-bold animate-pulse shadow-md z-50 pointer-events-none" }, "Modo Cable (ESC cancelar)"),
+
+                        React.createElement("svg", {
+                            ref: svgRef, className: `w-full h-full bg-white ${isPanning ? 'cursor-grabbing' : (drawingWire ? 'cursor-crosshair' : 'cursor-grab')}`,
+                            onMouseMove: handleMouseMove, onMouseDown: handleMouseDownBg, onMouseUp: handleMouseUp, onMouseLeave: handleMouseUp, onDragOver: handleDragOver, onDrop: handleDrop, onWheel: handleWheel
+                        },
+                            React.createElement("defs", null,
+                                React.createElement("marker", { id: "arrowhead-green", markerWidth: "4", markerHeight: "3", refX: "4", refY: "1.5", orient: "auto" }, React.createElement("polygon", { points: "0 0, 4 1.5, 0 3", fill: "#22c55e" })),
+                                React.createElement("marker", { id: "arrowhead-red", markerWidth: "4", markerHeight: "3", refX: "4", refY: "1.5", orient: "auto" }, React.createElement("polygon", { points: "0 0, 4 1.5, 0 3", fill: "#ef4444" })),
+                                React.createElement("pattern", { id: "grid", width: GRID_SIZE, height: GRID_SIZE, patternUnits: "userSpaceOnUse" }, React.createElement("circle", { cx: "1", cy: "1", r: "1", fill: "#ddd" }))
+                            ),
+                            React.createElement("g", { transform: `translate(${pan.x}, ${pan.y}) scale(${zoom})` },
+                                React.createElement("rect", { x: "-2000", y: "-2000", width: "8000", height: "8000", fill: "url(#grid)" }),
+                                wires.map(wire => {
+                                    const p1 = getTerminalPos(wire.startCompId, wire.startTerm);
+                                    const p2 = getTerminalPos(wire.endCompId, wire.endTerm);
+                                    const d = generateWirePathData(p1, p2, wire.waypoints);
+                                    return React.createElement("g", { key: wire.id, className: "group" },
+                                        React.createElement("path", { d: d, fill: "none", stroke: "black", strokeWidth: "2" }),
+                                        React.createElement("path", { d: d, fill: "none", stroke: "transparent", strokeWidth: "10", className: "cursor-pointer hover:stroke-red-200/50", onClick: () => removeWire(wire.id) }, React.createElement("title", null, "Click para eliminar"))
+                                    );
+                                }),
+                                drawingWire && React.createElement("g", null,
+                                    React.createElement("path", {
+                                        d: generateWirePathData({x: drawingWire.startX, y: drawingWire.startY}, {x: drawingWire.currentX, y: drawingWire.currentY}, drawingWire.waypoints),
+                                        fill: "none", stroke: "gray", strokeWidth: "2", strokeDasharray: "5,5"
+                                    }),
+                                    drawingWire.waypoints.map((pt, i) => React.createElement("circle", { key: i, cx: pt.x, cy: pt.y, r: 3, fill: "blue", opacity: "0.5" }))
+                                ),
+                                components.map(comp => renderComponent(comp))
+                            )
+                        ),
+
+                        // CONFIGURATION PANEL (Universal - FIXED: No type condition)
+                        selectedComponent && React.createElement("div", { className: "absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-lg border border-gray-300 flex flex-col gap-2 w-64 z-20" },
+                            React.createElement("div", { className: "flex items-center gap-2 text-gray-800 font-bold border-b pb-2 mb-1" },
+                                React.createElement(Settings, { size: 16 }),
+                                React.createElement("span", null, `Configurar ${CATALOG.find(c => c.type === selectedComponent.type)?.label || 'Componente'}`)
+                            ),
+                            React.createElement("div", { className: "flex flex-col gap-1" },
+                                // 1. ALIAS (Visible for ALL components)
+                                React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                                    React.createElement("span", { className: "text-sm" }, "Alias:"),
+                                    React.createElement("input", {
+                                        type: "text", maxLength: 6, value: selectedComponent.properties.alias || '',
+                                        onChange: (e) => updateComponentProperty(selectedComponent.id, 'alias', e.target.value),
+                                        className: "border rounded p-1 text-sm w-20 text-right"
+                                    })
+                                ),
+                                // 2. Specific Properties
+                                selectedComponent.type === COMP_TYPES.BATTERY ? (
+                                    React.createElement("div", null, 
+                                        React.createElement("input", { type: "range", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" }),
+                                        React.createElement("div", { className: "flex justify-between text-xs text-gray-500 px-1 mt-1" }, React.createElement("span", null, "0V"), React.createElement("input", { type: "number", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-16 p-0.5 border rounded text-xs text-center" }), React.createElement("span", null, "48V"))
+                                    )
+                                ) : selectedComponent.type === COMP_TYPES.LED ? (
+                                    React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                                        React.createElement("span", { className: "text-sm" }, "Color:"),
+                                        React.createElement("select", { value: selectedComponent.properties.color || 'red', onChange: (e) => updateComponentProperty(selectedComponent.id, 'color', e.target.value), className: "border rounded p-1 text-sm" }, Object.keys(LED_COLORS).map(key => React.createElement("option", { key: key, value: key }, LED_COLORS[key].label)))
+                                    )
+                                ) : (selectedComponent.type === COMP_TYPES.RESISTOR || selectedComponent.type === COMP_TYPES.POTENTIOMETER || selectedComponent.type === COMP_TYPES.BULB) ? (
+                                    React.createElement("div", { className: "flex gap-2 items-center" },
+                                        React.createElement("input", { type: "number", min: "1", step: "0.1", value: selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1), onChange: (e) => { const val = parseFloat(e.target.value) || 0; const unit = selectedComponent.properties.unit || 1; updateComponentProperties(selectedComponent.id, { resistance: val * unit }); }, className: "w-20 p-1 border rounded text-sm text-right" }),
+                                        React.createElement("select", { value: selectedComponent.properties.unit || 1, onChange: (e) => { const newUnit = parseInt(e.target.value); const currentVal = selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1); updateComponentProperties(selectedComponent.id, { resistance: currentVal * newUnit, unit: newUnit }); }, className: "flex-1 p-1 border rounded text-sm" }, React.createElement("option", { value: "1" }, "Ω"), React.createElement("option", { value: "1000" }, "kΩ"), React.createElement("option", { value: "1000000" }, "MΩ"))
+                                    )
+                                ) : null
+                            )
+                        )
+                    )
+                ),
+
+                // --- INFO MODAL ---
+                showInfoModal && React.createElement("div", { className: "fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm", onClick: () => setShowInfoModal(false) },
+                    React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative flex flex-col max-h-[90vh]", onClick: e => e.stopPropagation() },
+                        React.createElement("button", { onClick: () => setShowInfoModal(false), className: "absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors" },
+                            React.createElement(X, { size: 24 })
+                        ),
+                        
+                        // Encabezado alineado a la izquierda con icono de Banana
+                        React.createElement("div", { className: "flex items-center justify-start gap-4 mb-6 flex-shrink-0" },
+                            React.createElement("div", { className: "p-3 bg-yellow-50 rounded-full" },
+                                React.createElement(Banana, { size: 32, className: "text-yellow-600 fill-yellow-400" })
+                            ),
+                            React.createElement("div", { className: "text-left" },
+                                React.createElement("h2", { className: "text-2xl font-bold text-gray-800 mb-0 leading-tight" }, "Banana Plugs"),
+                                React.createElement("p", { className: "text-gray-500 text-sm font-medium" }, "Versión 3.0"),
+                                React.createElement("p", { className: "text-gray-400 text-xs" }, "Actualizado: 10 de Enero de 2026")
+                            )
+                        ),
+
+                        React.createElement("div", { className: "text-gray-600 text-sm leading-relaxed mb-6 text-justify overflow-y-auto pr-2 modal-scroll flex-grow" },
+                            React.createElement("p", { className: "mb-3" },
+                                "Banana plugs (Conector banana) es un simulador de circuitos para la iniciación en la electricidad y la electrónica. Ha sido creado por Alberto Gilsanz Mir y se distribuye bajo licencia CC-BY-SA."
+                            ),
+                            React.createElement("p", { className: "mb-3" },
+                                "La aplicación web representa los elementos por su símbolo normalizado, lo que contribuye a la comprensión y aplicación de circuitos a partir de esquemas eléctricos convencionales. Es la forma en la que nos gusta hacerlo, sin sustituir al montaje real en aula-taller, costoso, frustrante en ocasiones, pero tan necesario para disfrutar del resultado del aprendizaje."
+                            ),
+                            React.createElement("p", null,
+                                "Es un homenaje al extinto Crocodile Clips, que tantos años nos ayudó en las clases, y también a mis compañeros Vicente Ferri y Javier Juan-Senabre, con los que tanto hemos aprendido, disfrutado y ayudado a aprender a nuestro alumnado en estos 25 años de camino compartido. Gracias ",
+                                React.createElement("span", { className: "text-red-500" }, "♥"),
+                                "."
+                            )
+                        ),
+
+                        React.createElement("div", { className: "flex-shrink-0" },
+                            React.createElement("hr", { className: "border-gray-200 mb-4" }),
+
+                            React.createElement("div", { className: "flex justify-between items-center text-sm" },
+                                React.createElement("span", { className: "font-semibold text-gray-700" }, "Alberto Gilsanz"),
+                                React.createElement("div", { className: "flex gap-4" },
+                                    React.createElement("a", { href: "https://github.com/albertogilsanz/bananaplugs", target: "_blank", rel: "noopener noreferrer", className: "flex items-center gap-1.5 text-gray-600 hover:text-black transition-colors" },
+                                        React.createElement(Github, { size: 16 }),
+                                        React.createElement("span", { className: "font-medium" }, "Github")
+                                    ),
+                                    React.createElement("a", { href: "https://www.linkedin.com/in/albertogilsanz/", target: "_blank", rel: "noopener noreferrer", className: "flex items-center gap-1.5 text-blue-600 hover:text-blue-800 transition-colors" },
+                                        React.createElement(Linkedin, { size: 16 }),
+                                        React.createElement("span", { className: "font-medium" }, "LinkedIN")
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
