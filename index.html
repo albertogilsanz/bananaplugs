@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Banana Plugs 3.0</title>
+    <title>Banana Plugs 3.1</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -49,8 +49,6 @@
     <script type="module">
         import React, { useState, useRef, useEffect, useCallback } from 'react';
         import { createRoot } from 'react-dom/client';
-        // Importamos los nuevos iconos necesarios: Upload (flecha arriba), Image (imagen)
-        // Mantenemos Download para exportar JSON
         import { Trash2, RotateCw, Settings, ZoomIn, ZoomOut, Banana, Eraser, Info, Undo2, Redo2, Maximize, Download, X, Github, Linkedin, Upload, Image as ImageIcon } from 'lucide-react';
 
         // --- NOMBRES GRACIOSOS ---
@@ -85,6 +83,7 @@
             MOTOR_DC: 'motor_dc',
             LED: 'led',
             CROSSOVER: 'crossover',
+            TEXT: 'text',
         };
 
         // --- PREFIJOS PARA ETIQUETAS ---
@@ -104,6 +103,7 @@
             [COMP_TYPES.MOTOR_DC]: 'M',
             [COMP_TYPES.LED]: 'L',
             [COMP_TYPES.CROSSOVER]: 'CR',
+            [COMP_TYPES.TEXT]: 'T',
         };
 
         // --- CATÁLOGO ---
@@ -175,13 +175,11 @@
             { 
                 type: COMP_TYPES.DOUBLE_TOGGLE_SWITCH, 
                 label: 'Doble Conmutador', 
-                w: 3, h: 5, // Altura 5 para acomodar dos conmutadores con espacio
+                w: 3, h: 5, 
                 terminals: [
-                    // Switch 1 (Arriba)
                     { x: 0, y: 1, id: 'common1' }, 
                     { x: 3, y: 0, id: 't1_1' }, 
                     { x: 3, y: 2, id: 't2_1' },
-                    // Switch 2 (Abajo)
                     { x: 0, y: 4, id: 'common2' }, 
                     { x: 3, y: 3, id: 't1_2' }, 
                     { x: 3, y: 5, id: 't2_2' }
@@ -213,6 +211,13 @@
                 w: 3, h: 2, 
                 properties: { resistance: 0.001 }, 
                 terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] 
+            },
+            { 
+                type: COMP_TYPES.TEXT, 
+                label: 'Texto', 
+                w: 4, h: 2, 
+                properties: { text: 'Texto', fontSize: 16, color: '#000000' }, 
+                terminals: [] 
             },
         ];
 
@@ -566,6 +571,19 @@
                         React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "red", fontWeight: "bold" }, "+"),
                         React.createElement("text", { x: "52", y: "15", fontSize: "8", fill: "black", fontWeight: "bold" }, "-")
                     );
+                case COMP_TYPES.TEXT:
+                    if (isIcon) {
+                        return React.createElement("text", { x: "40", y: "28", textAnchor: "middle", fontSize: "40", fontWeight: "bold", fill: "#333" }, "T");
+                    }
+                    return React.createElement("text", {
+                        x: "0",
+                        y: "25", // Posición vertical aproximada
+                        fill: properties.color || "#000000",
+                        fontSize: properties.fontSize || 16,
+                        fontWeight: "normal",
+                        fontFamily: "sans-serif",
+                        style: { whiteSpace: "pre", userSelect: "none" } // whiteSpace: pre respeta espacios
+                    }, properties.text || "Texto");
                 default: return null;
             }
         };
@@ -605,7 +623,7 @@
             // --- EXPORTAR A JSON ---
             const handleExportJSON = () => {
                 const data = {
-                    version: "3.0",
+                    version: "3.1",
                     timestamp: new Date().toISOString(),
                     projectName,
                     components,
@@ -770,10 +788,7 @@
                 // --- REMOVE GRID DOTS ---
                 const gridRect = clone.querySelector('rect[fill="url(#grid)"]');
                 if (gridRect) {
-                     // Instead of changing fill, we remove the fill pattern reference
-                     // Or just set fill to white to hide the dots
                      gridRect.setAttribute('fill', 'white'); 
-                     // Also ensure it covers the area
                      gridRect.setAttribute('x', minX - padding);
                      gridRect.setAttribute('y', minY - padding);
                      gridRect.setAttribute('width', width);
@@ -790,7 +805,6 @@
                     el.setAttribute('fill', 'white');
                     el.setAttribute('fill-opacity', '1');
                 });
-
 
                 // --- WATERMARK ---
                 const watermarkGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -901,6 +915,7 @@
             }
 
             useEffect(() => { solveCircuit(); }, [components, wires]);
+            
             const solveCircuit = () => {
                 const terminalToNet = new Map(); let netCounter = 0;
                 const getTermKey = (cId, tId) => `${cId}_${tId}`;
@@ -935,19 +950,73 @@
 
                 const uniqueNets = Array.from(new Set(terminalToNet.values()));
                 const netVoltages = {}; const fixedNets = new Set();
-                uniqueNets.forEach(n => netVoltages[n] = 0);
                 
+                // CAMBIO 1: Inicializar a null (indefinido) en lugar de 0 para evitar "falsas tierras"
+                uniqueNets.forEach(n => netVoltages[n] = null);
+                
+                // --- NUEVA LÓGICA DE ISLAS Y TIERRAS MÚLTIPLES ---
+                // 1. Agrupar redes en "islas" conectadas por componentes
+                const netParent = {};
+                uniqueNets.forEach(n => netParent[n] = n);
+                const findNetParent = (n) => {
+                    if (netParent[n] === n) return n;
+                    netParent[n] = findNetParent(netParent[n]);
+                    return netParent[n];
+                };
+                const unionNets = (n1, n2) => {
+                    const root1 = findNetParent(n1);
+                    const root2 = findNetParent(n2);
+                    if (root1 !== root2) netParent[root1] = root2;
+                };
+
+                // Unir redes que están conectadas a través de CUALQUIER componente
+                components.forEach(c => {
+                    const compNets = [];
+                    const template = CATALOG.find(t => t.type === c.type);
+                    if(template) {
+                        template.terminals.forEach(t => {
+                            const n = terminalToNet.get(getTermKey(c.id, t.id));
+                            if (n !== undefined) compNets.push(n);
+                        });
+                    }
+                    // Unir todas las redes que toca este componente
+                    for (let i = 0; i < compNets.length - 1; i++) {
+                        unionNets(compNets[i], compNets[i+1]);
+                    }
+                });
+
+                // 2. Asignar Tierra (0V) a un nodo por cada isla que tenga baterías
                 const batteries = components.filter(c => c.type === COMP_TYPES.BATTERY);
-                if (batteries.length > 0) { const ref = terminalToNet.get(getTermKey(batteries[0].id, 't2')); netVoltages[ref] = 0; fixedNets.add(ref); }
-                else { setCompVoltages({}); return; }
+                if (batteries.length === 0) { setCompVoltages({}); return; }
+
+                const islandHasGround = new Set();
+                
+                batteries.forEach(bat => {
+                    const nNeg = terminalToNet.get(getTermKey(bat.id, 't2')); // Usamos el negativo como referencia preferida
+                    if (nNeg !== undefined) {
+                        const root = findNetParent(nNeg);
+                        // Si esta isla (circuito independiente) aún no tiene tierra, se la asignamos a este negativo
+                        if (!islandHasGround.has(root)) {
+                            netVoltages[nNeg] = 0; // Solo aquí definimos el 0V real
+                            fixedNets.add(nNeg);
+                            islandHasGround.add(root);
+                        }
+                    }
+                });
+                // ----------------------------------------------------
 
                 let change = true; let loops = 0;
                 while(change && loops < 50) {
                     change = false; loops++;
                     batteries.forEach(bat => {
                         const nPos = terminalToNet.get(getTermKey(bat.id, 't1')); const nNeg = terminalToNet.get(getTermKey(bat.id, 't2')); const v = bat.properties.voltage || 9;
-                        if (fixedNets.has(nNeg) && !fixedNets.has(nPos)) { netVoltages[nPos] = netVoltages[nNeg] + v; fixedNets.add(nPos); change = true; }
-                        else if (fixedNets.has(nPos) && !fixedNets.has(nNeg)) { netVoltages[nNeg] = netVoltages[nPos] - v; fixedNets.add(nNeg); change = true; }
+                        // Propagar voltaje solo si el origen es válido (no null)
+                        if (fixedNets.has(nNeg) && !fixedNets.has(nPos) && netVoltages[nNeg] !== null) { 
+                            netVoltages[nPos] = netVoltages[nNeg] + v; fixedNets.add(nPos); change = true; 
+                        }
+                        else if (fixedNets.has(nPos) && !fixedNets.has(nNeg) && netVoltages[nPos] !== null) { 
+                            netVoltages[nNeg] = netVoltages[nPos] - v; fixedNets.add(nNeg); change = true; 
+                        }
                     });
                 }
                 
@@ -957,49 +1026,67 @@
                         if (fixedNets.has(netId)) return;
                         let num = 0; let den = 0;
                         components.forEach(c => {
+                            // CAMBIO 2: Solo sumar términos si el nodo vecino tiene un voltaje definido (no null)
+                            // Esto evita que un nodo flotante (null) "tire" del voltaje hacia abajo
                             if (c.type === COMP_TYPES.POTENTIOMETER) {
                                 const R = c.properties.resistance || 100; const pos = c.properties.position || 0.5;
                                 const r1 = Math.max(0.1, R * pos); const r2 = Math.max(0.1, R * (1-pos));
                                 const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2')); const nw = terminalToNet.get(getTermKey(c.id, 'wiper'));
-                                if (netId === n1 && nw !== undefined) { num += netVoltages[nw]/r1; den += 1/r1; }
-                                if (netId === n2 && nw !== undefined) { num += netVoltages[nw]/r2; den += 1/r2; }
-                                if (netId === nw) { if (n1 !== undefined) { num += netVoltages[n1]/r1; den += 1/r1; } if (n2 !== undefined) { num += netVoltages[n2]/r2; den += 1/r2; } }
+                                
+                                if (netId === n1 && nw !== undefined && netVoltages[nw] !== null) { num += netVoltages[nw]/r1; den += 1/r1; }
+                                if (netId === n2 && nw !== undefined && netVoltages[nw] !== null) { num += netVoltages[nw]/r2; den += 1/r2; }
+                                if (netId === nw) { 
+                                    if (n1 !== undefined && netVoltages[n1] !== null) { num += netVoltages[n1]/r1; den += 1/r1; } 
+                                    if (n2 !== undefined && netVoltages[n2] !== null) { num += netVoltages[n2]/r2; den += 1/r2; } 
+                                }
                             } else if (c.type === COMP_TYPES.LED) {
                                 const nA = terminalToNet.get(getTermKey(c.id, 'anode')); const nC = terminalToNet.get(getTermKey(c.id, 'cathode'));
                                 const vF = c.properties.forwardVoltage || 2; const rL = c.properties.resistance || 1;
-                                if (netVoltages[nA] > netVoltages[nC] + vF - 0.1) {
-                                    if (netId === nA && nC !== undefined) { num += (netVoltages[nC] + vF)/rL; den += 1/rL; }
-                                    if (netId === nC && nA !== undefined) { num += (netVoltages[nA] - vF)/rL; den += 1/rL; }
+                                
+                                const vA = netVoltages[nA] !== null ? netVoltages[nA] : 0;
+                                const vC = netVoltages[nC] !== null ? netVoltages[nC] : 0;
+                                
+                                if (vA > vC + vF - 0.1) {
+                                    if (netId === nA && nC !== undefined && netVoltages[nC] !== null) { num += (netVoltages[nC] + vF)/rL; den += 1/rL; }
+                                    if (netId === nC && nA !== undefined && netVoltages[nA] !== null) { num += (netVoltages[nA] - vF)/rL; den += 1/rL; }
                                 }
                             } else if ([COMP_TYPES.BULB, COMP_TYPES.BUZZER, COMP_TYPES.MOTOR_DC, COMP_TYPES.RESISTOR, COMP_TYPES.AMMETER, COMP_TYPES.VOLTMETER].includes(c.type)) {
                                 const r = Math.max(0.001, (c.properties.resistance * (c.properties.unit||1)) || 10);
                                 const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
-                                if (netId === n1 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
-                                if (netId === n2 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
+                                if (netId === n1 && n2 !== undefined && netVoltages[n2] !== null) { num += netVoltages[n2]/r; den += 1/r; }
+                                if (netId === n2 && n1 !== undefined && netVoltages[n1] !== null) { num += netVoltages[n1]/r; den += 1/r; }
                             } else if (c.type === COMP_TYPES.CROSSOVER) {
                                 const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
                                 const n3 = terminalToNet.get(getTermKey(c.id, 't3')); const n4 = terminalToNet.get(getTermKey(c.id, 't4'));
                                 const r = 0.001;
                                 if (!c.state) { // Direct
-                                    if (netId === n1 && n3 !== undefined) { num += netVoltages[n3]/r; den += 1/r; } if (netId === n3 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
-                                    if (netId === n2 && n4 !== undefined) { num += netVoltages[n4]/r; den += 1/r; } if (netId === n4 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
+                                    if (netId === n1 && n3 !== undefined && netVoltages[n3] !== null) { num += netVoltages[n3]/r; den += 1/r; } 
+                                    if (netId === n3 && n1 !== undefined && netVoltages[n1] !== null) { num += netVoltages[n1]/r; den += 1/r; }
+                                    if (netId === n2 && n4 !== undefined && netVoltages[n4] !== null) { num += netVoltages[n4]/r; den += 1/r; } 
+                                    if (netId === n4 && n2 !== undefined && netVoltages[n2] !== null) { num += netVoltages[n2]/r; den += 1/r; }
                                 } else { // Cross
-                                    if (netId === n1 && n4 !== undefined) { num += netVoltages[n4]/r; den += 1/r; } if (netId === n4 && n1 !== undefined) { num += netVoltages[n1]/r; den += 1/r; }
-                                    if (netId === n2 && n3 !== undefined) { num += netVoltages[n3]/r; den += 1/r; } if (netId === n3 && n2 !== undefined) { num += netVoltages[n2]/r; den += 1/r; }
+                                    if (netId === n1 && n4 !== undefined && netVoltages[n4] !== null) { num += netVoltages[n4]/r; den += 1/r; } 
+                                    if (netId === n4 && n1 !== undefined && netVoltages[n1] !== null) { num += netVoltages[n1]/r; den += 1/r; }
+                                    if (netId === n2 && n3 !== undefined && netVoltages[n3] !== null) { num += netVoltages[n3]/r; den += 1/r; } 
+                                    if (netId === n3 && n2 !== undefined && netVoltages[n2] !== null) { num += netVoltages[n2]/r; den += 1/r; }
                                 }
                             }
                         });
                         if (den > 0) nextVoltages[netId] = num / den;
+                        // Si den es 0, significa que no hay vecinos válidos, se queda como null (flotante)
                     });
                     Object.assign(netVoltages, nextVoltages);
                 }
+
+                // CAMBIO 3: Limpieza final. Convertir nulls remanentes a 0 para visualización segura
+                uniqueNets.forEach(n => { if (netVoltages[n] === null) netVoltages[n] = 0; });
 
                 const newCompVals = {};
                 components.forEach(c => {
                     if (c.type === COMP_TYPES.LED) {
                         const nA = terminalToNet.get(getTermKey(c.id, 'anode')); const nC = terminalToNet.get(getTermKey(c.id, 'cathode'));
                         newCompVals[c.id] = (netVoltages[nA]||0) - (netVoltages[nC]||0);
-                    } else if (c.type !== COMP_TYPES.POTENTIOMETER && c.type !== COMP_TYPES.TOGGLE_SWITCH && c.type !== COMP_TYPES.SWITCH && c.type !== COMP_TYPES.CROSSOVER) {
+                    } else if (c.type !== COMP_TYPES.POTENTIOMETER && c.type !== COMP_TYPES.TOGGLE_SWITCH && c.type !== COMP_TYPES.SWITCH && c.type !== COMP_TYPES.CROSSOVER && c.type !== COMP_TYPES.TEXT) {
                         const n1 = terminalToNet.get(getTermKey(c.id, 't1')); const n2 = terminalToNet.get(getTermKey(c.id, 't2'));
                         newCompVals[c.id] = (netVoltages[n1]||0) - (netVoltages[n2]||0);
                     }
@@ -1321,7 +1408,7 @@
                     ),
 
                     // Generic Alias
-                    ![COMP_TYPES.RESISTOR, COMP_TYPES.POTENTIOMETER, COMP_TYPES.BATTERY, COMP_TYPES.LED, COMP_TYPES.VOLTMETER, COMP_TYPES.AMMETER].includes(comp.type) && comp.properties?.alias && React.createElement("text", {
+                    ![COMP_TYPES.RESISTOR, COMP_TYPES.POTENTIOMETER, COMP_TYPES.BATTERY, COMP_TYPES.LED, COMP_TYPES.VOLTMETER, COMP_TYPES.AMMETER, COMP_TYPES.TEXT].includes(comp.type) && comp.properties?.alias && React.createElement("text", {
                          x: isVertical ? -10 : currentW / 2, 
                          y: isVertical ? currentH / 2 : -10, 
                          textAnchor: isVertical ? "end" : "middle", 
@@ -1494,32 +1581,67 @@
                                 React.createElement("span", null, `Configurar ${CATALOG.find(c => c.type === selectedComponent.type)?.label || 'Componente'}`)
                             ),
                             React.createElement("div", { className: "flex flex-col gap-1" },
-                                // 1. ALIAS (Visible for ALL components)
-                                React.createElement("div", { className: "flex items-center justify-between mb-2" },
-                                    React.createElement("span", { className: "text-sm" }, "Alias:"),
-                                    React.createElement("input", {
-                                        type: "text", maxLength: 6, value: selectedComponent.properties.alias || '',
-                                        onChange: (e) => updateComponentProperty(selectedComponent.id, 'alias', e.target.value),
-                                        className: "border rounded p-1 text-sm w-20 text-right"
-                                    })
-                                ),
-                                // 2. Specific Properties
-                                selectedComponent.type === COMP_TYPES.BATTERY ? (
-                                    React.createElement("div", null, 
-                                        React.createElement("input", { type: "range", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" }),
-                                        React.createElement("div", { className: "flex justify-between text-xs text-gray-500 px-1 mt-1" }, React.createElement("span", null, "0V"), React.createElement("input", { type: "number", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-16 p-0.5 border rounded text-xs text-center" }), React.createElement("span", null, "48V"))
+                                // PANEL ESPECÍFICO PARA TEXTO
+                                selectedComponent.type === COMP_TYPES.TEXT ? (
+                                    React.createElement("div", { className: "flex flex-col gap-2" },
+                                        React.createElement("label", { className: "text-xs font-bold text-gray-600" }, "Contenido:"),
+                                        React.createElement("textarea", {
+                                            value: selectedComponent.properties.text,
+                                            onChange: (e) => updateComponentProperty(selectedComponent.id, 'text', e.target.value),
+                                            className: "border rounded p-1 text-sm w-full h-16 resize-none focus:ring-2 focus:ring-blue-200 outline-none"
+                                        }),
+                                        React.createElement("div", { className: "flex gap-2" },
+                                            React.createElement("div", { className: "flex-1" },
+                                                React.createElement("label", { className: "text-xs font-bold text-gray-600 block mb-1" }, "Tamaño:"),
+                                                React.createElement("input", {
+                                                    type: "number", min: "8", max: "72",
+                                                    value: selectedComponent.properties.fontSize,
+                                                    onChange: (e) => updateComponentProperty(selectedComponent.id, 'fontSize', parseInt(e.target.value) || 12),
+                                                    className: "border rounded p-1 text-sm w-full"
+                                                })
+                                            ),
+                                            React.createElement("div", { className: "flex-1" },
+                                                React.createElement("label", { className: "text-xs font-bold text-gray-600 block mb-1" }, "Color:"),
+                                                React.createElement("input", {
+                                                    type: "color",
+                                                    value: selectedComponent.properties.color,
+                                                    onChange: (e) => updateComponentProperty(selectedComponent.id, 'color', e.target.value),
+                                                    className: "border rounded h-8 w-full p-0 cursor-pointer"
+                                                })
+                                            )
+                                        )
                                     )
-                                ) : selectedComponent.type === COMP_TYPES.LED ? (
-                                    React.createElement("div", { className: "flex items-center justify-between mb-2" },
-                                        React.createElement("span", { className: "text-sm" }, "Color:"),
-                                        React.createElement("select", { value: selectedComponent.properties.color || 'red', onChange: (e) => updateComponentProperty(selectedComponent.id, 'color', e.target.value), className: "border rounded p-1 text-sm" }, Object.keys(LED_COLORS).map(key => React.createElement("option", { key: key, value: key }, LED_COLORS[key].label)))
+                                ) : (
+                                    // PANEL ESTÁNDAR PARA EL RESTO (Alias, Voltaje, etc.)
+                                    React.createElement(React.Fragment, null,
+                                        // 1. ALIAS (Visible for ALL components EXCEPT TEXT)
+                                        React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                                            React.createElement("span", { className: "text-sm" }, "Alias:"),
+                                            React.createElement("input", {
+                                                type: "text", maxLength: 6, value: selectedComponent.properties.alias || '',
+                                                onChange: (e) => updateComponentProperty(selectedComponent.id, 'alias', e.target.value),
+                                                className: "border rounded p-1 text-sm w-20 text-right"
+                                            })
+                                        ),
+                                        // 2. Specific Properties
+                                        selectedComponent.type === COMP_TYPES.BATTERY ? (
+                                            React.createElement("div", null, 
+                                                React.createElement("input", { type: "range", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" }),
+                                                React.createElement("div", { className: "flex justify-between text-xs text-gray-500 px-1 mt-1" }, React.createElement("span", null, "0V"), React.createElement("input", { type: "number", min: "0", max: "48", step: "0.1", value: selectedComponent.properties.voltage, onChange: (e) => updateComponentProperty(selectedComponent.id, 'voltage', e.target.value), className: "w-16 p-0.5 border rounded text-xs text-center" }), React.createElement("span", null, "48V"))
+                                            )
+                                        ) : selectedComponent.type === COMP_TYPES.LED ? (
+                                            React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                                                React.createElement("span", { className: "text-sm" }, "Color:"),
+                                                React.createElement("select", { value: selectedComponent.properties.color || 'red', onChange: (e) => updateComponentProperty(selectedComponent.id, 'color', e.target.value), className: "border rounded p-1 text-sm" }, Object.keys(LED_COLORS).map(key => React.createElement("option", { key: key, value: key }, LED_COLORS[key].label)))
+                                            )
+                                        ) : (selectedComponent.type === COMP_TYPES.RESISTOR || selectedComponent.type === COMP_TYPES.POTENTIOMETER || selectedComponent.type === COMP_TYPES.BULB) ? (
+                                            React.createElement("div", { className: "flex gap-2 items-center" },
+                                                React.createElement("input", { type: "number", min: "1", step: "0.1", value: selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1), onChange: (e) => { const val = parseFloat(e.target.value) || 0; const unit = selectedComponent.properties.unit || 1; updateComponentProperties(selectedComponent.id, { resistance: val * unit }); }, className: "w-20 p-1 border rounded text-sm text-right" }),
+                                                React.createElement("select", { value: selectedComponent.properties.unit || 1, onChange: (e) => { const newUnit = parseInt(e.target.value); const currentVal = selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1); updateComponentProperties(selectedComponent.id, { resistance: currentVal * newUnit, unit: newUnit }); }, className: "flex-1 p-1 border rounded text-sm" }, React.createElement("option", { value: "1" }, "Ω"), React.createElement("option", { value: "1000" }, "kΩ"), React.createElement("option", { value: "1000000" }, "MΩ"))
+                                            )
+                                        ) : null
                                     )
-                                ) : (selectedComponent.type === COMP_TYPES.RESISTOR || selectedComponent.type === COMP_TYPES.POTENTIOMETER || selectedComponent.type === COMP_TYPES.BULB) ? (
-                                    React.createElement("div", { className: "flex gap-2 items-center" },
-                                        React.createElement("input", { type: "number", min: "1", step: "0.1", value: selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1), onChange: (e) => { const val = parseFloat(e.target.value) || 0; const unit = selectedComponent.properties.unit || 1; updateComponentProperties(selectedComponent.id, { resistance: val * unit }); }, className: "w-20 p-1 border rounded text-sm text-right" }),
-                                        React.createElement("select", { value: selectedComponent.properties.unit || 1, onChange: (e) => { const newUnit = parseInt(e.target.value); const currentVal = selectedComponent.properties.resistance / (selectedComponent.properties.unit || 1); updateComponentProperties(selectedComponent.id, { resistance: currentVal * newUnit, unit: newUnit }); }, className: "flex-1 p-1 border rounded text-sm" }, React.createElement("option", { value: "1" }, "Ω"), React.createElement("option", { value: "1000" }, "kΩ"), React.createElement("option", { value: "1000000" }, "MΩ"))
-                                    )
-                                ) : null
+                                )
                             )
                         )
                     )
@@ -1539,14 +1661,14 @@
                             ),
                             React.createElement("div", { className: "text-left" },
                                 React.createElement("h2", { className: "text-2xl font-bold text-gray-800 mb-0 leading-tight" }, "Banana Plugs"),
-                                React.createElement("p", { className: "text-gray-500 text-sm font-medium" }, "Versión 3.0"),
-                                React.createElement("p", { className: "text-gray-400 text-xs" }, "Actualizado: 10 de Enero de 2026")
+                                React.createElement("p", { className: "text-gray-500 text-sm font-medium" }, "Versión 3.1"),
+                                React.createElement("p", { className: "text-gray-400 text-xs" }, "Actualizado: 11 de Enero de 2025")
                             )
                         ),
 
                         React.createElement("div", { className: "text-gray-600 text-sm leading-relaxed mb-6 text-justify overflow-y-auto pr-2 modal-scroll flex-grow" },
                             React.createElement("p", { className: "mb-3" },
-                                "Banana plugs (Conector banana) es un simulador de circuitos para la iniciación en la electricidad y la electrónica. Ha sido creado por Alberto Gilsanz Mir y se distribuye bajo licencia CC-BY-SA."
+                                "Banana plugs (Conectores banana) es un simulador de circuitos para la iniciación en la electricidad y la electrónica. Ha sido creado por Alberto Gilsanz Mir y se distribuye bajo licencia CC-BY-SA."
                             ),
                             React.createElement("p", { className: "mb-3" },
                                 "La aplicación web representa los elementos por su símbolo normalizado, lo que contribuye a la comprensión y aplicación de circuitos a partir de esquemas eléctricos convencionales. Es la forma en la que nos gusta hacerlo, sin sustituir al montaje real en aula-taller, costoso, frustrante en ocasiones, pero tan necesario para disfrutar del resultado del aprendizaje."
