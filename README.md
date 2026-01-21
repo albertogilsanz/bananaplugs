@@ -12,4 +12,5 @@ las clases, y también a mis compañeros Vicente Ferri y Javier Juan-
 Senabre, con los que tanto hemos aprendido, disfrutado y ayudado a
 aprender a nuestro alumnado en estos 25 años de camino compartido.
 Gracias.
+
 ![Visitas](https://visitor-badge.laobi.icu/badge?page_id=albertogilsanz.babanaplugs)
