@@ -26,6 +26,7 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
+        /* Estilos de scrollbar personalizados para el modal de información */
         .modal-scroll::-webkit-scrollbar {
             width: 8px;
         }
@@ -50,7 +51,6 @@
         import { createRoot } from 'react-dom/client';
         import { Trash2, RotateCw, Settings, ZoomIn, ZoomOut, Banana, Info, Undo2, Redo2, Maximize, Download, X, Github, Linkedin, Upload, Image as ImageIcon } from 'lucide-react';
 
-        // --- NOMBRES GRACIOSOS ---
         const FUNNY_NAMES = [
             "Chispas_Locas", "Voltio_Inquieto", "Amperio_Furioso", 
             "Ohmio_Sabio", "Resistencia_Tope", "Electron_Perdido", 
@@ -60,7 +60,6 @@
             "Banana_Power", "Cortocircuito_Feliz", "Led_Zeppelin"
         ];
 
-        // --- PALETA DE 9 COLORES PARA LOS CABLES ---
         const WIRE_COLORS = [
             { id: 'black', hex: '#000000', name: 'Negro (0)' },
             { id: 'brown', hex: '#8B4513', name: 'Marrón (1)' },
@@ -73,32 +72,17 @@
             { id: 'gray', hex: '#6B7280', name: 'Gris (8)' }
         ];
 
-        // --- CONFIGURACIÓN ---
         const GRID_SIZE = 20;
         const SNAP = 20;
         const ITERATIONS = 100;
 
-        // --- TIPOS DE COMPONENTES ---
         const COMP_TYPES = {
-            BATTERY: 'battery',
-            BULB: 'bulb',
-            RESISTOR: 'resistor', 
-            POTENTIOMETER: 'potentiometer',
-            SWITCH: 'switch',
-            TOGGLE_SWITCH: 'toggle_switch', 
-            DOUBLE_TOGGLE_SWITCH: 'double_toggle_switch',
-            PUSH_NO: 'push_no',
-            PUSH_NC: 'push_nc',
-            VOLTMETER: 'voltmeter',
-            AMMETER: 'ammeter', 
-            BUZZER: 'buzzer', 
-            MOTOR_DC: 'motor_dc',
-            LED: 'led',
-            CROSSOVER: 'crossover',
-            TEXT: 'text',
+            BATTERY: 'battery', BULB: 'bulb', RESISTOR: 'resistor', POTENTIOMETER: 'potentiometer',
+            SWITCH: 'switch', TOGGLE_SWITCH: 'toggle_switch', DOUBLE_TOGGLE_SWITCH: 'double_toggle_switch',
+            PUSH_NO: 'push_no', PUSH_NC: 'push_nc', VOLTMETER: 'voltmeter', AMMETER: 'ammeter', 
+            BUZZER: 'buzzer', MOTOR_DC: 'motor_dc', LED: 'led', CROSSOVER: 'crossover', TEXT: 'text',
         };
 
-        // --- PREFIJOS PARA ETIQUETAS ---
         const TYPE_PREFIXES = {
             [COMP_TYPES.BATTERY]: 'Vcc', [COMP_TYPES.BULB]: 'B', [COMP_TYPES.RESISTOR]: 'R',
             [COMP_TYPES.POTENTIOMETER]: 'P', [COMP_TYPES.SWITCH]: 'I', [COMP_TYPES.TOGGLE_SWITCH]: 'C', 
@@ -107,7 +91,6 @@
             [COMP_TYPES.MOTOR_DC]: 'M', [COMP_TYPES.LED]: 'L', [COMP_TYPES.CROSSOVER]: 'CR', [COMP_TYPES.TEXT]: 'T',
         };
 
-        // --- CATÁLOGO DE COMPONENTES ---
         const CATALOG = [
             { type: COMP_TYPES.BATTERY, label: 'Fuente CC', w: 3, h: 2, properties: { voltage: 9, alias: 'Vcc1' }, terminals: [{ x: 0, y: 1, id: 't1', pol: '+' }, { x: 3, y: 1, id: 't2', pol: '-' }] },
             { type: COMP_TYPES.BULB, label: 'Bombilla', w: 3, h: 2, properties: { resistance: 50 }, terminals: [{ x: 0, y: 1, id: 't1' }, { x: 3, y: 1, id: 't2' }] },
@@ -159,7 +142,11 @@
             const strokeWidth = 2; const absVoltage = Math.abs(voltageDrop); const voltage = voltageDrop;
             const brightness = Math.min(Math.max(absVoltage / 9, 0), 2); const isLit = brightness > 0.1;
             const bulbColor = brightness > 1.5 ? '#FFFFE0' : '#FFEB3B'; const glowOpacity = Math.min(brightness, 1);
-            const isBuzzing = absVoltage >= 6; 
+            
+            // Lógica progresiva y de avería para zumbador
+            const isBuzzerBroken = type === COMP_TYPES.BUZZER && absVoltage >= 20;
+            const isBuzzing = type === COMP_TYPES.BUZZER && absVoltage >= 2 && !isBuzzerBroken;
+            const buzzerIntensity = Math.min(Math.max((absVoltage - 2) / 10, 0), 1); // 0 en 2V, 1 en 12V o más
 
             switch(type) {
                 case COMP_TYPES.BATTERY:
@@ -199,10 +186,10 @@
                 case COMP_TYPES.LED:
                     const rLed = properties.resistance || 1; const vFwd = properties.forwardVoltage || 2;
                     const vEff = Math.max(0, voltage - vFwd); const currentLed = vEff / rLed;
-                    const isBroken = currentLed > (properties.maxCurrent || 0.03);
+                    const isLedBroken = currentLed > (properties.maxCurrent || 0.03);
                     const ledColorKey = properties.color || 'red'; const targetColor = LED_COLORS[ledColorKey] ? LED_COLORS[ledColorKey].on : '#FF0000';
                     let ledFill = "#FFFFFF"; 
-                    if (!isBroken) {
+                    if (!isLedBroken) {
                         if (currentLed <= 0.005) ledFill = "#FFFFFF";
                         else if (currentLed >= 0.020) ledFill = targetColor;
                         else ledFill = interpolateColor("#FFFFFF", targetColor, (currentLed - 0.005) / 0.015);
@@ -217,7 +204,7 @@
                             React.createElement("line", { x1: "30", y1: "5", x2: "36", y2: "-1" }), React.createElement("line", { x1: "36", y1: "8", x2: "42", y2: "2" }),
                             React.createElement("polygon", { points: "36,-1 33,0 36,2", fill: color, stroke: "none" }), React.createElement("polygon", { points: "42,2 39,3 42,5", fill: color, stroke: "none" })
                         ),
-                        isBroken && React.createElement("g", { transform: "translate(30, 20)", className: "sim-visible" }, 
+                        isLedBroken && React.createElement("g", { transform: "translate(30, 20)", className: "sim-visible" }, 
                              React.createElement("polygon", { points: "0,-8 2,-2 8,-2 3,2 5,8 0,4 -5,8 -3,2 -8,-2 -2,-2", fill: "#EF4444", stroke: "#FCD34D", strokeWidth: "1.5", style: { animation: "pulse-star 0.5s infinite" } })
                         ),
                         !isIcon && React.createElement(React.Fragment, null, React.createElement("text", { x: "5", y: "15", fontSize: "8", fill: "#666" }, "A"), React.createElement("text", { x: "55", y: "15", fontSize: "8", fill: "#666" }, "K"))
@@ -237,9 +224,16 @@
                     return React.createElement("g", null,
                         React.createElement("line", { x1: "0", y1: "20", x2: "20", y2: "20", stroke: color, strokeWidth: strokeWidth }), React.createElement("line", { x1: "40", y1: "20", x2: "60", y2: "20", stroke: color, strokeWidth: strokeWidth }),
                         React.createElement("line", { x1: "20", y1: "20", x2: "20", y2: "15", stroke: color, strokeWidth: strokeWidth }), React.createElement("line", { x1: "40", y1: "20", x2: "40", y2: "15", stroke: color, strokeWidth: strokeWidth }),
-                        React.createElement("path", { d: "M 15 5 L 45 5 L 45 9 Q 45 18 30 18 Q 15 18 15 9 Z", fill: isBuzzing ? "#fee2e2" : "white", className: "sim-fill", stroke: color, strokeWidth: strokeWidth }),
+                        React.createElement("path", { d: "M 15 5 L 45 5 L 45 9 Q 45 18 30 18 Q 15 18 15 9 Z", fill: isBuzzerBroken ? "#333" : interpolateColor("#ffffff", "#fca5a5", buzzerIntensity), className: "sim-fill", stroke: color, strokeWidth: strokeWidth }),
                         React.createElement("line", { x1: "15", y1: "5", x2: "45", y2: "5", stroke: color, strokeWidth: strokeWidth }),
-                        isBuzzing && React.createElement("g", { stroke: "orange", strokeWidth: "2", fill: "none", className: "sim-visible" }, React.createElement("path", { d: "M 25 0 Q 30 -5 35 0" }), React.createElement("path", { d: "M 20 -3 Q 30 -10 40 -3", opacity: "0.6" }), React.createElement("path", { d: "M 15 -6 Q 30 -15 45 -6", opacity: "0.3" }))
+                        isBuzzing && React.createElement("g", { stroke: "orange", strokeWidth: "2", fill: "none", className: "sim-visible" }, 
+                            React.createElement("path", { d: "M 25 0 Q 30 -5 35 0", opacity: 0.3 + 0.7 * buzzerIntensity }), 
+                            React.createElement("path", { d: "M 20 -3 Q 30 -10 40 -3", opacity: (0.3 + 0.7 * buzzerIntensity) * 0.6 }), 
+                            React.createElement("path", { d: "M 15 -6 Q 30 -15 45 -6", opacity: (0.3 + 0.7 * buzzerIntensity) * 0.3 })
+                        ),
+                        isBuzzerBroken && React.createElement("g", { transform: "translate(30, 10)", className: "sim-visible" }, 
+                             React.createElement("polygon", { points: "0,-8 2,-2 8,-2 3,2 5,8 0,4 -5,8 -3,2 -8,-2 -2,-2", fill: "#EF4444", stroke: "#FCD34D", strokeWidth: "1.5", style: { animation: "pulse-star 0.5s infinite" } })
+                        )
                     );
                 case COMP_TYPES.SWITCH:
                     return React.createElement("g", null,
@@ -376,7 +370,7 @@
             };
             const handleTriggerImport = () => fileInputRef.current.click();
 
-            // --- POSICIONAMIENTO Y COORDENADAS (RUTAS ORTOGONALES EN "L") ---
+            // --- POSICIONAMIENTO Y COORDENADAS ---
             const getTerminalPos = (compId, termId) => {
                 const comp = components.find(c => c.id === compId); if (!comp) return { x: 0, y: 0 };
                 const template = CATALOG.find(c => c.type === comp.type); const term = template.terminals.find(t => t.id === termId);
@@ -387,20 +381,12 @@
                 return { x: comp.x + lx * SNAP, y: comp.y + ly * SNAP };
             };
             
+            // VOLVEMOS AL TRAZADO LIBRE (CON WAYPOINTS)
             const generateWirePathData = (start, end, waypoints = []) => {
-                let d = `M ${start.x} ${start.y}`; 
-                let prev = start;
-                waypoints.forEach(pt => { 
-                    if (prev.x !== pt.x && prev.y !== pt.y) {
-                        d += ` L ${pt.x} ${prev.y}`; // Siempre recto horizontalmente primero
-                    }
-                    d += ` L ${pt.x} ${pt.y}`; 
-                    prev = pt; 
-                });
-                if (prev.x !== end.x && prev.y !== end.y) {
-                    d += ` L ${end.x} ${prev.y}`; // Recto final
-                }
-                d += ` L ${end.x} ${end.y}`;
+                let d = `M ${start.x} ${start.y}`; let prev = start;
+                waypoints.forEach(pt => { d += ` L ${pt.x} ${pt.y}`; prev = pt; });
+                if (prev.x === end.x || prev.y === end.y) d += ` L ${end.x} ${end.y}`;
+                else { const midX = snapToGrid((prev.x + end.x) / 2); d += ` L ${midX} ${prev.y} L ${midX} ${end.y} L ${end.x} ${end.y}`; }
                 return d;
             };
             
@@ -414,7 +400,7 @@
                 });
                 wires.forEach(w => {
                     const p1 = getTerminalPos(w.startCompId, w.startTerm); const p2 = getTerminalPos(w.endCompId, w.endTerm);
-                    [p1, p2, ...w.waypoints].forEach(pt => {
+                    [p1, p2, ...(w.waypoints || [])].forEach(pt => {
                         if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y; if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y;
                     });
                 });
@@ -435,7 +421,7 @@
                 });
                 wires.forEach(w => {
                     const p1 = getTerminalPos(w.startCompId, w.startTerm); const p2 = getTerminalPos(w.endCompId, w.endTerm);
-                    [p1, p2, ...w.waypoints].forEach(pt => { if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y; if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y; });
+                    [p1, p2, ...(w.waypoints || [])].forEach(pt => { if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y; if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y; });
                 });
                 if (minX === Infinity) return;
                 const padding = 40; const width = maxX - minX + padding * 2; const height = maxY - minY + padding * 2;
@@ -462,16 +448,37 @@
 
             // --- SIMULACIÓN ELECTRÓNICA ---
             useEffect(() => {
-                const isBuzzing = components.some(c => c.type === COMP_TYPES.BUZZER && Math.abs(compVoltages[c.id] || 0) >= 6);
-                if (isBuzzing) {
+                const activeBuzzers = components
+                    .filter(c => c.type === COMP_TYPES.BUZZER)
+                    .map(c => Math.abs(compVoltages[c.id] || 0))
+                    .filter(v => v >= 2 && v < 20);
+
+                if (activeBuzzers.length > 0) {
+                    const maxVoltage = Math.max(...activeBuzzers);
+                    const intensity = Math.min(Math.max((maxVoltage - 2) / 10, 0), 1); 
+                    
+                    const targetFreq = 300 + (intensity * 300); 
+                    const targetGain = 0.02 + (intensity * 0.08); 
+
                     if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
                     if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume().catch(e => console.log(e));
+                    
                     if (!oscillatorRef.current && audioCtxRef.current.state === 'running') {
                         const osc = audioCtxRef.current.createOscillator(); const gain = audioCtxRef.current.createGain();
-                        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(400, audioCtxRef.current.currentTime); gain.gain.setValueAtTime(0.1, audioCtxRef.current.currentTime);
-                        osc.connect(gain); gain.connect(audioCtxRef.current.destination); osc.start(); oscillatorRef.current = osc; gainNodeRef.current = gain;
+                        osc.type = 'sawtooth'; 
+                        osc.frequency.setValueAtTime(targetFreq, audioCtxRef.current.currentTime); 
+                        gain.gain.setValueAtTime(targetGain, audioCtxRef.current.currentTime);
+                        osc.connect(gain); gain.connect(audioCtxRef.current.destination); 
+                        osc.start(); oscillatorRef.current = osc; gainNodeRef.current = gain;
+                    } else if (oscillatorRef.current && gainNodeRef.current) {
+                        oscillatorRef.current.frequency.setTargetAtTime(targetFreq, audioCtxRef.current.currentTime, 0.1);
+                        gainNodeRef.current.gain.setTargetAtTime(targetGain, audioCtxRef.current.currentTime, 0.1);
                     }
-                } else if (oscillatorRef.current) { oscillatorRef.current.stop(); oscillatorRef.current.disconnect(); gainNodeRef.current.disconnect(); oscillatorRef.current = null; gainNodeRef.current = null; }
+                } else if (oscillatorRef.current) { 
+                    oscillatorRef.current.stop(); oscillatorRef.current.disconnect(); 
+                    if(gainNodeRef.current) gainNodeRef.current.disconnect(); 
+                    oscillatorRef.current = null; gainNodeRef.current = null; 
+                }
             }, [compVoltages, components]);
 
             const updateCircuit = (newComponents, newWires) => {
@@ -486,20 +493,14 @@
 
             useEffect(() => {
                 const handleKeyDown = (e) => {
-                    // Evitar interferencia si el usuario está escribiendo en el proyecto o un alias
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
                     if (e.key === 'Escape') { setDrawingWire(null); setSelectedCompId(null); setSelectedWireId(null); }
                     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
                     if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
-                    
-                    // --- ATAJOS TECLADO COLORES DE CABLE (0-8) ---
                     if (selectedWireId && e.key >= '0' && e.key <= '8') {
                         e.preventDefault();
                         const colorIndex = parseInt(e.key, 10);
-                        if (WIRE_COLORS[colorIndex]) {
-                            updateWireColor(selectedWireId, WIRE_COLORS[colorIndex].hex);
-                        }
+                        if (WIRE_COLORS[colorIndex]) updateWireColor(selectedWireId, WIRE_COLORS[colorIndex].hex);
                     }
                 };
                 window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
@@ -657,26 +658,26 @@
             const removeComponent = (id) => { updateCircuit(components.filter(c => c.id !== id), wires.filter(w => w.startCompId !== id && w.endCompId !== id)); if (selectedCompId === id) setSelectedCompId(null); };
 
             const handleWireClick = (e, id) => { e.stopPropagation(); if (drawingWire) return; setSelectedCompId(null); setSelectedWireId(id); };
-            
             const handleMouseDownComp = (e, comp) => {
                 e.stopPropagation(); if (drawingWire) return;
                 setSelectedCompId(comp.id); setSelectedWireId(null);
                 if (comp.type === COMP_TYPES.PUSH_NO || comp.type === COMP_TYPES.PUSH_NC) { const newComps = components.map(c => c.id === comp.id ? { ...c, state: true } : c); updateCircuit(newComps, wires); }
                 const pos = getWorldPosition(e.clientX, e.clientY); setDraggingComp(comp.id); setDragOffset({ x: pos.x - comp.x, y: pos.y - comp.y });
             };
+            
+            // VOLVEMOS AL TRAZADO CON PUNTOS INTERMEDIOS
             const handleMouseDownBg = (e) => {
                 if (drawingWire) {
                     const pos = getWorldPosition(e.clientX, e.clientY); const mouseX = snapToGrid(pos.x); const mouseY = snapToGrid(pos.y);
                     const lastPoint = drawingWire.waypoints.length > 0 ? drawingWire.waypoints[drawingWire.waypoints.length - 1] : { x: drawingWire.startX, y: drawingWire.startY };
                     const newWaypoints = [...drawingWire.waypoints];
-                    // Un solo punto garantiza la L
-                    if (lastPoint.x !== mouseX || lastPoint.y !== mouseY) { 
-                        newWaypoints.push({ x: mouseX, y: mouseY }); 
-                    }
+                    if (lastPoint.x !== mouseX && lastPoint.y !== mouseY) { const midX = snapToGrid((lastPoint.x + mouseX) / 2); newWaypoints.push({ x: midX, y: lastPoint.y }); newWaypoints.push({ x: midX, y: mouseY }); }
+                    newWaypoints.push({ x: mouseX, y: mouseY });
                     setDrawingWire({ ...drawingWire, waypoints: newWaypoints, currentX: mouseX, currentY: mouseY }); return;
                 }
                 setIsPanning(true); setPanStart({ x: e.clientX, y: e.clientY }); setSelectedCompId(null); setSelectedWireId(null);
             };
+            
             const handleMouseUpComp = (e, comp) => { if (comp.type === COMP_TYPES.PUSH_NO || comp.type === COMP_TYPES.PUSH_NC) { const newComps = components.map(c => c.id === comp.id ? { ...c, state: false } : c); updateCircuit(newComps, wires); } };
             const handleClickSwitch = (e, comp) => { e.stopPropagation(); if (drawingWire) return; if ([COMP_TYPES.SWITCH, COMP_TYPES.TOGGLE_SWITCH, COMP_TYPES.DOUBLE_TOGGLE_SWITCH, COMP_TYPES.CROSSOVER].includes(comp.type)) { const newComps = components.map(c => c.id === comp.id ? { ...c, state: !c.state } : c); updateCircuit(newComps, wires); } };
             const rotateComponent = (e, compId) => {
@@ -687,6 +688,8 @@
                     return { ...c, rotation: newRotation, width: isVertical ? template.h : template.w, height: isVertical ? template.w : template.h };
                 }); updateCircuit(newComps, wires);
             };
+            
+            // VOLVEMOS AL GUARDADO DE PUNTOS INTERMEDIOS
             const handleMouseDownTerminal = (e, compId, termId) => {
                 e.stopPropagation(); setSelectedCompId(null); setSelectedWireId(null);
                 if (drawingWire) {
@@ -816,13 +819,15 @@
                                 wires.map(wire => {
                                     const p1 = getTerminalPos(wire.startCompId, wire.startTerm); const p2 = getTerminalPos(wire.endCompId, wire.endTerm); const d = generateWirePathData(p1, p2, wire.waypoints);
                                     const isSelected = selectedWireId === wire.id; const wireColor = wire.color || "#000000";
+                                    
+                                    // Cálculo adaptado para encontrar el punto medio en rutas con múltiples waypoints
                                     let midPt = null;
                                     if (isSelected) {
-                                        const pts = [p1, ...wire.waypoints, p2];
+                                        const pts = [p1, ...(wire.waypoints || []), p2];
                                         if (pts.length === 2) {
-                                            const midX = snapToGrid((p1.x + p2.x) / 2);
-                                            midPt = { x: midX, y: (p1.y + p2.y) / 2 };
+                                            midPt = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
                                         } else {
+                                            // Si hay 3 o más puntos (ruta compleja), pillamos el punto central del array
                                             midPt = pts[Math.floor(pts.length / 2)];
                                         }
                                     }
@@ -836,22 +841,17 @@
                                             onMouseDown: (e) => e.stopPropagation(), 
                                             onClick: (e) => handleWireClick(e, wire.id) 
                                         }, React.createElement("title", null, "Click para cambiar color o eliminar")),
+                                        
                                         isSelected && midPt && React.createElement("g", { 
-                                            transform: `translate(${midPt.x - 12}, ${midPt.y - 12})`,
+                                            transform: `translate(${midPt.x - 12}, ${midPt.y - 12})`, 
                                             className: "cursor-pointer hover:opacity-80 z-50 sim-visible", 
-                                            onClick: (e) => { e.stopPropagation(); removeWire(wire.id); },
-                                            onMouseDown: (e) => e.stopPropagation()
-                                        }, 
-                                            React.createElement("rect", { width: 24, height: 24, rx: 4, fill: "#FEF2F2", stroke: "#EF4444", strokeWidth: 1 }), 
-                                            React.createElement(Trash2, { size: 16, x: 4, y: 4, color: "#EF4444" })
-                                        )
+                                            onClick: (e) => { e.stopPropagation(); removeWire(wire.id); }, 
+                                            onMouseDown: (e) => e.stopPropagation() 
+                                        }, React.createElement("rect", { width: 24, height: 24, rx: 4, fill: "#FEF2F2", stroke: "#EF4444", strokeWidth: 1 }), React.createElement(Trash2, { size: 16, x: 4, y: 4, color: "#EF4444" }) )
                                     );
                                 }),
                                 
-                                drawingWire && React.createElement("g", null,
-                                    React.createElement("path", { d: generateWirePathData({x: drawingWire.startX, y: drawingWire.startY}, {x: drawingWire.currentX, y: drawingWire.currentY}, drawingWire.waypoints), fill: "none", stroke: "gray", strokeWidth: "2", strokeDasharray: "5,5" }),
-                                    drawingWire.waypoints.map((pt, i) => React.createElement("circle", { key: i, cx: pt.x, cy: pt.y, r: 3, fill: "blue", opacity: "0.5" }))
-                                ),
+                                drawingWire && React.createElement("g", null, React.createElement("path", { d: generateWirePathData({x: drawingWire.startX, y: drawingWire.startY}, {x: drawingWire.currentX, y: drawingWire.currentY}, drawingWire.waypoints), fill: "none", stroke: "gray", strokeWidth: "2", strokeDasharray: "5,5" }) ),
                                 components.map(comp => renderComponent(comp))
                             )
                         ),
@@ -909,7 +909,7 @@
                         React.createElement("button", { onClick: () => setShowInfoModal(false), className: "absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors" }, React.createElement(X, { size: 24 }) ),
                         React.createElement("div", { className: "flex items-center justify-start gap-4 mb-6 flex-shrink-0" },
                             React.createElement("div", { className: "p-3 bg-yellow-50 rounded-full" }, React.createElement(Banana, { size: 32, className: "text-yellow-600 fill-yellow-400" }) ),
-                            React.createElement("div", { className: "text-left" }, React.createElement("h2", { className: "text-2xl font-bold text-gray-800 mb-0 leading-tight" }, "Banana Plugs"), React.createElement("p", { className: "text-gray-500 text-sm font-medium" }, "Versión 3.2"), React.createElement("p", { className: "text-gray-400 text-xs" }, "Actualizado: 11 de Enero de 2025") )
+                            React.createElement("div", { className: "text-left" }, React.createElement("h2", { className: "text-2xl font-bold text-gray-800 mb-0 leading-tight" }, "Banana Plugs"), React.createElement("p", { className: "text-gray-500 text-sm font-medium" }, "Versión 3.2"), React.createElement("p", { className: "text-gray-400 text-xs" }, "Actualizado: 16 de Mayo de 2026") )
                         ),
                         React.createElement("div", { className: "text-gray-600 text-sm leading-relaxed mb-6 text-justify overflow-y-auto pr-2 modal-scroll flex-grow" },
                             React.createElement("p", { className: "mb-3" }, "Banana plugs (Conectores banana) es un simulador de circuitos para la iniciación en la electricidad y la electrónica. Ha sido creado por Alberto Gilsanz Mir y se distribuye bajo licencia CC-BY-SA."),
